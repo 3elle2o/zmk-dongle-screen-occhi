@@ -16,6 +16,11 @@ static struct zmk_widget_output_status output_status_widget;
 static struct zmk_widget_layer_status layer_status_widget;
 #endif
 
+#if CONFIG_DONGLE_SCREEN_EYES_ACTIVE
+#include "widgets/eyes_status.h"
+static struct zmk_widget_eyes_status eyes_status_widget;
+#endif
+
 #if CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE
 #include "widgets/battery_status.h"
 static struct zmk_widget_dongle_battery_status dongle_battery_status_widget;
@@ -69,6 +74,13 @@ lv_obj_t *zmk_display_status_screen()
 #if CONFIG_DONGLE_SCREEN_LAYER_ACTIVE
     zmk_widget_layer_status_init(&layer_status_widget, screen);
     lv_obj_align(zmk_widget_layer_status_obj(&layer_status_widget), LV_ALIGN_CENTER, 0, 0);
+#endif
+
+#if CONFIG_DONGLE_SCREEN_EYES_ACTIVE
+    zmk_widget_eyes_status_init(&eyes_status_widget, screen);
+    // Sits slightly high: the eyes fill their box, unlike the label they
+    // replace, so centring them would run into the row below.
+    lv_obj_align(zmk_widget_eyes_status_obj(&eyes_status_widget), LV_ALIGN_CENTER, 0, -10);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE

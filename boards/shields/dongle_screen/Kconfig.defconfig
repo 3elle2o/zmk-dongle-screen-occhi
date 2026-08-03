@@ -145,6 +145,18 @@ config DONGLE_SCREEN_WPM_ACTIVE
     help
       If the WPM Widget should be active or not
 
+config DONGLE_SCREEN_EYES_ACTIVE
+    bool "Animated eyes widget active"
+    default n
+    select LV_USE_LINE
+    help
+      Replaces the layer label with a pair of animated eyes. The eyes blink,
+      glance around, and change expression per layer. On the base layer they
+      react to idle state and typing speed instead.
+
+      Turn DONGLE_SCREEN_LAYER_ACTIVE off when enabling this, or the layer
+      label will be drawn underneath them.
+
 config DONGLE_SCREEN_MODIFIER_ACTIVE
     bool "Modifier Widget active"
     default y

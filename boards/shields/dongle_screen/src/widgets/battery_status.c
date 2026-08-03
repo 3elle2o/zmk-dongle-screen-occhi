@@ -29,6 +29,13 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
+// The percentage sits beside the bar rather than on a row above it, so the
+// whole indicator is one line tall instead of two.
+#define BAT_BAR_W 70
+#define BAT_BAR_H 5
+#define BAT_LABEL_W 28
+#define BAT_PITCH 120
+
 struct battery_state
 {
     uint8_t source;
@@ -42,7 +49,8 @@ struct battery_object
     lv_obj_t *label;
 } battery_objects[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET];
 
-static lv_color_t battery_image_buffer[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET][102 * 5];
+static lv_color_t battery_image_buffer[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET]
+                                      [BAT_BAR_W * BAT_BAR_H];
 
 // Peripheral reconnection tracking
 // ZMK sends battery events with level < 1 when peripherals disconnect
@@ -96,28 +104,26 @@ static void draw_battery(lv_obj_t *canvas, uint8_t level, bool usb_present)
         lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
     }
 
-    lv_draw_rect_dsc_t rect_fill_dsc;
-    lv_draw_rect_dsc_init(&rect_fill_dsc);
-    rect_fill_dsc.bg_color = lv_color_black();
-
+    // Knock out the four corners so the bar reads as rounded at this size.
     lv_canvas_set_px(canvas, 0, 0, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_set_px(canvas, 0, 4, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_set_px(canvas, 101, 0, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_set_px(canvas, 101, 4, lv_color_black(), LV_OPA_COVER);
+    lv_canvas_set_px(canvas, 0, BAT_BAR_H - 1, lv_color_black(), LV_OPA_COVER);
+    lv_canvas_set_px(canvas, BAT_BAR_W - 1, 0, lv_color_black(), LV_OPA_COVER);
+    lv_canvas_set_px(canvas, BAT_BAR_W - 1, BAT_BAR_H - 1, lv_color_black(), LV_OPA_COVER);
 
     if (level <= 99 && level > 0)
     {
-        // Draw filled rectangle manually since lv_canvas_draw_rect doesn't exist in LVGL v8+
-        for (int x = level; x < 100; x++)
+        // The bar is no longer 100px wide, so charge maps onto it rather than
+        // being used directly as an x coordinate.
+        int filled = (level * (BAT_BAR_W - 2)) / 100;
+
+        // Drawn pixel by pixel: lv_canvas_draw_rect doesn't exist in LVGL v8+.
+        for (int x = 1 + filled; x < BAT_BAR_W - 1; x++)
         {
-            for (int y = 1; y < 4; y++)
+            for (int y = 1; y < BAT_BAR_H - 1; y++)
             {
                 lv_canvas_set_px(canvas, x, y, lv_color_black(), LV_OPA_COVER);
             }
         }
-        lv_canvas_set_px(canvas, 100, 1, lv_color_black(), LV_OPA_COVER);
-        lv_canvas_set_px(canvas, 100, 2, lv_color_black(), LV_OPA_COVER);
-        lv_canvas_set_px(canvas, 100, 3, lv_color_black(), LV_OPA_COVER);
     }
 }
 
@@ -156,7 +162,7 @@ static void set_battery_symbol(lv_obj_t *widget, struct battery_state state)
     if (state.level > 0)
     {
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_label_set_text_fmt(label, "%4u", state.level);
+        lv_label_set_text_fmt(label, "%u", state.level);
     }
     else
     {
@@ -172,12 +178,12 @@ static void set_battery_symbol(lv_obj_t *widget, struct battery_state state)
     else if (state.level <= 10)
     {
         lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_YELLOW), 0);
-        lv_label_set_text_fmt(label, "%4u", state.level);
+        lv_label_set_text_fmt(label, "%u", state.level);
     }
     else
     {
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_label_set_text_fmt(label, "%4u", state.level);
+        lv_label_set_text_fmt(label, "%u", state.level);
     }
 
     lv_obj_clear_flag(symbol, LV_OBJ_FLAG_HIDDEN);
@@ -244,17 +250,21 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
 {
     widget->obj = lv_obj_create(parent);
 
-    lv_obj_set_size(widget->obj, 240, 40);
+    lv_obj_set_size(widget->obj, 240, 20);
 
     for (int i = 0; i < ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET; i++)
     {
         lv_obj_t *image_canvas = lv_canvas_create(widget->obj);
         lv_obj_t *battery_label = lv_label_create(widget->obj);
 
-        lv_canvas_set_buffer(image_canvas, battery_image_buffer[i], 102, 5, LV_COLOR_FORMAT_RGB565);
+        lv_canvas_set_buffer(image_canvas, battery_image_buffer[i], BAT_BAR_W, BAT_BAR_H,
+                             LV_COLOR_FORMAT_RGB565);
 
-        lv_obj_align(image_canvas, LV_ALIGN_BOTTOM_MID, -60 + (i * 120), -8);
-        lv_obj_align(battery_label, LV_ALIGN_TOP_MID, -60 + (i * 120), 0);
+        // Number then bar, both on the same line, one cell per half.
+        lv_obj_set_width(battery_label, BAT_LABEL_W);
+        lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, 10 + (i * BAT_PITCH), 0);
+        lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, 10 + BAT_LABEL_W + 4 + (i * BAT_PITCH), 0);
 
         lv_obj_add_flag(image_canvas, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
