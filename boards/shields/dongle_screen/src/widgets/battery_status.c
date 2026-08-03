@@ -31,10 +31,12 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
 // The percentage sits beside the bar rather than on a row above it, so the
 // whole indicator is one line tall instead of two.
-#define BAT_BAR_W 70
+#define BAT_BAR_W 56
 #define BAT_BAR_H 5
 #define BAT_LABEL_W 28
-#define BAT_PITCH 120
+// Both cells sit left of centre so the connection indicator has the right-hand
+// end of this row to itself.
+#define BAT_PITCH 96
 
 struct battery_state
 {
@@ -263,8 +265,8 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
         // Number then bar, both on the same line, one cell per half.
         lv_obj_set_width(battery_label, BAT_LABEL_W);
         lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, 10 + (i * BAT_PITCH), 0);
-        lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, 10 + BAT_LABEL_W + 4 + (i * BAT_PITCH), 0);
+        lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, i * BAT_PITCH, 0);
+        lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, BAT_LABEL_W + 4 + (i * BAT_PITCH), 0);
 
         lv_obj_add_flag(image_canvas, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);

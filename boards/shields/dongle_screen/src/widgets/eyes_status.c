@@ -28,8 +28,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include "eyes_status.h"
 
-#define EYES_W 200
-#define EYES_H 100
+#define EYES_W 220
+#define EYES_H 120
 
 #define EYE_W 56
 #define EYE_H 76
@@ -42,11 +42,20 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // lurch outward when the expression changes.
 #define LINE_INSET (LINE_W / 2)
 
-#define LID_CLOSED_H 6
+// Vertical extent is scaled by `openness` rather than set directly, so blinks
+// and expression changes share one mechanism and work on chevrons too.
+#define OPEN_FULL 256
+#define OPEN_SHUT 12
+
 #define BLINK_CLOSE_MS 70
 #define BLINK_OPEN_MS 110
 #define BLINK_MIN_MS 2600
 #define BLINK_MAX_MS 6400
+
+// Expression changes blink through the swap. Cutting straight from a bar to a
+// chevron is a hard pop; hiding the change behind a lid reads as intentional.
+#define MORPH_CLOSE_MS 80
+#define MORPH_OPEN_MS 120
 
 // A saccade is a snap, not a drift: slow interpolation reads as the eyes
 // sliding around the panel rather than looking at something.
@@ -58,8 +67,17 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 // ZMK's WPM is a rolling estimate and bounces around the boundary, so the
 // trigger and the release are deliberately separated.
-#define WPM_EXCITED_ON 50
-#define WPM_EXCITED_OFF 42
+#define WPM_EXCITED_ON 60
+#define WPM_EXCITED_OFF 50
+
+// Squeezing is an effort, so it pulses rather than sitting still.
+#define STRAIN_MS 420
+
+// ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
+// "actually asleep" stage is timed locally.
+#define ZZZ_DELAY_MS 20000
+#define ZZZ_CYCLE_MS 1800
+#define ZZZ_RISE 16
 
 enum eye_shape { SHAPE_BAR, SHAPE_CHEVRON_UP, SHAPE_CHEVRON_IN };
 
@@ -86,7 +104,9 @@ struct expression {
 static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_NEUTRAL] = {SHAPE_BAR, EYE_W, EYE_H, 0, EYE_R, true},
     [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, false},
-    [EXPR_WIDE] = {SHAPE_BAR, 60, 88, 0, 26, true},
+    // Deliberately much larger than neutral - at only a few px difference the
+    // "alert" read didn't survive a glance at the panel.
+    [EXPR_WIDE] = {SHAPE_BAR, 68, 100, 0, 30, true},
     [EXPR_DEADPAN] = {SHAPE_BAR, 60, 14, 0, 7, false},
     [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 12, false},
     [EXPR_SLEEPY] = {SHAPE_BAR, EYE_W, 22, 16, 11, false},
@@ -103,6 +123,7 @@ static const enum expr_id layer_expr[] = {
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
 static bool wpm_excited;
+static lv_timer_t *zzz_timer;
 
 static uint32_t rng_state;
 
@@ -123,25 +144,34 @@ static int32_t rnd_range(int32_t lo, int32_t hi) {
     return lo + (int32_t)(rnd() % (uint32_t)(hi - lo + 1));
 }
 
+static int32_t scaled(int32_t v, int32_t openness) { return (v * openness) / OPEN_FULL; }
+
 static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
-                               enum eye_shape shape) {
-    const int32_t w = EYE_W;
-    const int32_t h = EYE_H;
+                               const struct expression *e) {
+    const int32_t w = e->w;
+    const int32_t h = scaled(e->h, widget->openness);
+    const int32_t top = (e->h - h) / 2; // keep the shape vertically centred as it closes
     lv_point_precise_t *p = widget->pts[eye];
 
-    if (shape == SHAPE_CHEVRON_UP) {
-        p[0] = (lv_point_precise_t){LINE_INSET, h - LINE_INSET};
-        p[1] = (lv_point_precise_t){w / 2, LINE_INSET};
-        p[2] = (lv_point_precise_t){w - LINE_INSET, h - LINE_INSET};
+    if (e->shape == SHAPE_CHEVRON_UP) {
+        p[0] = (lv_point_precise_t){LINE_INSET, top + h - LINE_INSET};
+        p[1] = (lv_point_precise_t){w / 2, top + LINE_INSET};
+        p[2] = (lv_point_precise_t){w - LINE_INSET, top + h - LINE_INSET};
     } else {
-        // Left eye points right, right eye points left, so the pair squeezes inward.
-        bool point_right = (eye == 0);
-        lv_coord_t apex = point_right ? (w - LINE_INSET) : LINE_INSET;
-        lv_coord_t open = point_right ? LINE_INSET : (w - LINE_INSET);
+        // Left eye points right, right eye points left, so the pair squeezes
+        // inward. How far the point protrudes is what the strain animation
+        // pushes on.
+        int32_t reach = w - 2 * LINE_INSET;
+        int32_t k = 205 + (51 * widget->strain) / OPEN_FULL; // 0.80 - 1.00
+        int32_t depth = (reach * k) / OPEN_FULL;
 
-        p[0] = (lv_point_precise_t){open, LINE_INSET};
-        p[1] = (lv_point_precise_t){apex, h / 2};
-        p[2] = (lv_point_precise_t){open, h - LINE_INSET};
+        bool point_right = (eye == 0);
+        int32_t apex = point_right ? (LINE_INSET + depth) : (w - LINE_INSET - depth);
+        int32_t open = point_right ? LINE_INSET : (w - LINE_INSET);
+
+        p[0] = (lv_point_precise_t){open, top + LINE_INSET};
+        p[1] = (lv_point_precise_t){apex, top + h / 2};
+        p[2] = (lv_point_precise_t){open, top + h - LINE_INSET};
     }
 
     lv_line_set_points(widget->line[eye], p, 3);
@@ -159,23 +189,36 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
-            set_chevron_points(widget, i, e->shape);
-            lv_obj_set_size(widget->line[i], EYE_W, EYE_H);
-            lv_obj_align(widget->line[i], LV_ALIGN_CENTER, dx - EYE_W / 2, dy);
+            set_chevron_points(widget, i, e);
+            lv_obj_set_size(widget->line[i], e->w, e->h);
+            // Aligns by the object's own centre, exactly like the bars do -
+            // the line must not carry an extra half-width offset.
+            lv_obj_align(widget->line[i], LV_ALIGN_CENTER, dx, dy);
         } else {
+            int32_t h = scaled(e->h, widget->openness);
+            if (h < 2) {
+                h = 2;
+            }
+
             lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
 
-            lv_obj_set_size(widget->bar[i], e->w, widget->cur_h);
+            lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
         }
     }
 }
 
-static void height_anim_cb(void *var, int32_t v) {
+static void openness_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
-    widget->cur_h = (int16_t)v;
+    widget->openness = (int16_t)v;
+    apply_geometry(widget);
+}
+
+static void strain_anim_cb(void *var, int32_t v) {
+    struct zmk_widget_eyes_status *widget = var;
+    widget->strain = (int16_t)v;
     apply_geometry(widget);
 }
 
@@ -186,7 +229,8 @@ static void gaze_anim_cb(void *var, int32_t v) {
 }
 
 static void animate(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t cb, int32_t from,
-                    int32_t to, uint32_t ms, uint32_t delay, lv_anim_path_cb_t path) {
+                    int32_t to, uint32_t ms, uint32_t delay, lv_anim_path_cb_t path,
+                    lv_anim_completed_cb_t done) {
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, widget);
@@ -195,19 +239,105 @@ static void animate(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t cb
     lv_anim_set_time(&a, ms);
     lv_anim_set_delay(&a, delay);
     lv_anim_set_path_cb(&a, path);
+    if (done) {
+        lv_anim_set_completed_cb(&a, done);
+    }
     lv_anim_start(&a);
+}
+
+static void stop_strain(struct zmk_widget_eyes_status *widget) {
+    lv_anim_delete(widget, strain_anim_cb);
+    widget->strain = OPEN_FULL;
+}
+
+static void start_strain(struct zmk_widget_eyes_status *widget) {
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, widget);
+    lv_anim_set_exec_cb(&a, strain_anim_cb);
+    lv_anim_set_values(&a, OPEN_FULL, 0);
+    lv_anim_set_time(&a, STRAIN_MS);
+    lv_anim_set_playback_time(&a, STRAIN_MS);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
+}
+
+static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
+    for (int i = 0; i < 3; i++) {
+        if (show) {
+            lv_obj_remove_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+static void zzz_timer_cb(lv_timer_t *timer) {
+    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+    if (widget->expr == EXPR_SLEEPY) {
+        show_zzz(widget, true);
+    }
+}
+
+static void morph_open(lv_anim_t *a) {
+    struct zmk_widget_eyes_status *widget = a->var;
+    const struct expression *e;
+
+    // Swapped at the bottom of the blink, where nothing is visible.
+    widget->expr = widget->pending_expr;
+    e = &expressions[widget->expr];
+
+    if (!e->wander && (widget->gaze_x || widget->gaze_y)) {
+        lv_anim_delete(widget, gaze_anim_cb);
+        widget->gaze_x = 0;
+        widget->gaze_y = 0;
+    }
+
+    if (widget->expr == EXPR_SQUEEZED) {
+        start_strain(widget);
+    } else {
+        stop_strain(widget);
+    }
+
+    apply_geometry(widget);
+    animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, MORPH_OPEN_MS, 0,
+            lv_anim_path_ease_out, NULL);
+}
+
+static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id id) {
+    if (widget->expr == id) {
+        return;
+    }
+
+    widget->pending_expr = id;
+
+    if (id != EXPR_SLEEPY) {
+        show_zzz(widget, false);
+        if (zzz_timer) {
+            lv_timer_pause(zzz_timer);
+        }
+    } else if (zzz_timer) {
+        lv_timer_set_period(zzz_timer, ZZZ_DELAY_MS);
+        lv_timer_reset(zzz_timer);
+        lv_timer_resume(zzz_timer);
+    }
+
+    lv_anim_delete(widget, openness_anim_cb);
+    animate(widget, openness_anim_cb, widget->openness, OPEN_SHUT, MORPH_CLOSE_MS, 0,
+            lv_anim_path_ease_in, morph_open);
 }
 
 static void blink_timer_cb(lv_timer_t *timer) {
     struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
     const struct expression *e = &expressions[widget->expr];
 
-    // Chevrons and already-flat expressions have nothing to close.
-    if (e->shape == SHAPE_BAR && e->h > LID_CLOSED_H + 10) {
-        animate(widget, height_anim_cb, widget->cur_h, LID_CLOSED_H, BLINK_CLOSE_MS, 0,
-                lv_anim_path_ease_in);
-        animate(widget, height_anim_cb, LID_CLOSED_H, e->h, BLINK_OPEN_MS, BLINK_CLOSE_MS,
-                lv_anim_path_ease_out);
+    // Already-flat expressions have nothing left to close.
+    if (e->h > 24 && widget->openness == OPEN_FULL) {
+        animate(widget, openness_anim_cb, OPEN_FULL, OPEN_SHUT, BLINK_CLOSE_MS, 0,
+                lv_anim_path_ease_in, NULL);
+        animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, BLINK_OPEN_MS, BLINK_CLOSE_MS,
+                lv_anim_path_ease_out, NULL);
     }
 
     lv_timer_set_period(timer, rnd_range(BLINK_MIN_MS, BLINK_MAX_MS));
@@ -220,38 +350,11 @@ static void glance_timer_cb(lv_timer_t *timer) {
     if (e->wander) {
         int16_t target = (int16_t)rnd_range(-GAZE_X_MAX, GAZE_X_MAX);
         widget->gaze_y = (int16_t)rnd_range(-GAZE_Y_MAX, GAZE_Y_MAX);
-        animate(widget, gaze_anim_cb, widget->gaze_x, target, SACCADE_MS, 0,
-                lv_anim_path_ease_out);
+        animate(widget, gaze_anim_cb, widget->gaze_x, target, SACCADE_MS, 0, lv_anim_path_ease_out,
+                NULL);
     }
 
     lv_timer_set_period(timer, rnd_range(GLANCE_MIN_MS, GLANCE_MAX_MS));
-}
-
-static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id id) {
-    if (widget->expr == id) {
-        return;
-    }
-
-    const struct expression *e = &expressions[id];
-    widget->expr = id;
-
-    // A blink mid-change would fight the new height.
-    lv_anim_delete(widget, height_anim_cb);
-
-    if (!e->wander && (widget->gaze_x || widget->gaze_y)) {
-        lv_anim_delete(widget, gaze_anim_cb);
-        widget->gaze_x = 0;
-        widget->gaze_y = 0;
-    }
-
-    if (e->shape == SHAPE_BAR) {
-        animate(widget, height_anim_cb, widget->cur_h, e->h, SACCADE_MS, 0,
-                lv_anim_path_ease_out);
-    } else {
-        widget->cur_h = e->h;
-    }
-
-    apply_geometry(widget);
 }
 
 struct eyes_state {
@@ -304,6 +407,51 @@ ZMK_SUBSCRIPTION(widget_eyes_status, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(widget_eyes_status, zmk_wpm_state_changed);
 ZMK_SUBSCRIPTION(widget_eyes_status, zmk_activity_state_changed);
 
+static void zzz_anim_opa(void *var, int32_t v) {
+    lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, LV_PART_MAIN);
+}
+
+static void zzz_anim_y(void *var, int32_t v) { lv_obj_set_y((lv_obj_t *)var, v); }
+
+static void init_zzz(struct zmk_widget_eyes_status *widget) {
+    // Staggered so they read as a sequence rather than a pulse.
+    static const int16_t zx[3] = {74, 86, 98};
+    static const int16_t zy[3] = {-6, -22, -38};
+
+    for (int i = 0; i < 3; i++) {
+        widget->zzz[i] = lv_label_create(widget->obj);
+        lv_label_set_text(widget->zzz[i], "z");
+        lv_obj_set_style_text_color(widget->zzz[i], lv_color_white(), LV_PART_MAIN);
+        lv_obj_align(widget->zzz[i], LV_ALIGN_CENTER, zx[i], zy[i]);
+        lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
+
+        int16_t base = lv_obj_get_y(widget->zzz[i]);
+        uint32_t delay = i * (ZZZ_CYCLE_MS / 3);
+
+        lv_anim_t o;
+        lv_anim_init(&o);
+        lv_anim_set_var(&o, widget->zzz[i]);
+        lv_anim_set_exec_cb(&o, zzz_anim_opa);
+        lv_anim_set_values(&o, LV_OPA_TRANSP, LV_OPA_COVER);
+        lv_anim_set_time(&o, ZZZ_CYCLE_MS / 2);
+        lv_anim_set_playback_time(&o, ZZZ_CYCLE_MS / 2);
+        lv_anim_set_delay(&o, delay);
+        lv_anim_set_repeat_count(&o, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&o);
+
+        // Snaps back to the start while opacity is zero, so the reset is unseen.
+        lv_anim_t y;
+        lv_anim_init(&y);
+        lv_anim_set_var(&y, widget->zzz[i]);
+        lv_anim_set_exec_cb(&y, zzz_anim_y);
+        lv_anim_set_values(&y, base, base - ZZZ_RISE);
+        lv_anim_set_time(&y, ZZZ_CYCLE_MS);
+        lv_anim_set_delay(&y, delay);
+        lv_anim_set_repeat_count(&y, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&y);
+    }
+}
+
 int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
     lv_obj_remove_style_all(widget->obj);
@@ -318,14 +466,20 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_SCROLLABLE);
 
         widget->line[i] = lv_line_create(widget->obj);
+        lv_obj_remove_style_all(widget->line[i]);
         lv_obj_set_style_line_color(widget->line[i], lv_color_white(), LV_PART_MAIN);
         lv_obj_set_style_line_width(widget->line[i], LINE_W, LV_PART_MAIN);
         lv_obj_set_style_line_rounded(widget->line[i], true, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(widget->line[i], 0, LV_PART_MAIN);
         lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    init_zzz(widget);
+
     widget->expr = EXPR_NEUTRAL;
-    widget->cur_h = EYE_H;
+    widget->pending_expr = EXPR_NEUTRAL;
+    widget->openness = OPEN_FULL;
+    widget->strain = OPEN_FULL;
     widget->gaze_x = 0;
     widget->gaze_y = 0;
     widget->idle = false;
@@ -338,6 +492,10 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     lv_timer_t *glance =
         lv_timer_create(glance_timer_cb, rnd_range(GLANCE_MIN_MS, GLANCE_MAX_MS), widget);
     lv_timer_set_repeat_count(glance, -1);
+
+    zzz_timer = lv_timer_create(zzz_timer_cb, ZZZ_DELAY_MS, widget);
+    lv_timer_set_repeat_count(zzz_timer, 1);
+    lv_timer_pause(zzz_timer);
 
     sys_slist_append(&widgets, &widget->node);
 

@@ -15,10 +15,14 @@ struct zmk_widget_eyes_status {
     lv_obj_t *bar[2];
     lv_obj_t *line[2];
     lv_point_precise_t pts[2][3];
+    lv_obj_t *zzz[3]; // drift up and fade once idle has gone on a while
 
-    uint8_t expr;     // index into the expression table
-    int16_t cur_h;    // animated by the blink
-    int16_t gaze_x;   // saccade offset, applied to both eyes together
+    uint8_t expr;
+    uint8_t pending_expr; // expression to adopt at the bottom of a transition
+
+    int16_t openness; // 0-256, scales vertical extent; drives blinks and morphs
+    int16_t strain;   // 0-256, how hard a squeeze is currently pushing
+    int16_t gaze_x;
     int16_t gaze_y;
     bool idle;
 };

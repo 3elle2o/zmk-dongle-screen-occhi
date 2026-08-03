@@ -55,8 +55,10 @@ static void set_status_symbol(struct zmk_widget_output_status *widget, struct ou
     case ZMK_TRANSPORT_USB:
         // Red when the dongle has power but the host isn't talking to it,
         // e.g. plugged into a charger rather than a computer.
-        snprintf(transport_text, sizeof(transport_text), "#%s USB#",
-                 state.usb_is_hid_ready ? "ffffff" : "ff0000");
+        // LVGL's built-in symbols are used rather than the bundled Nerd Font,
+        // whose subset has a Bluetooth glyph but no USB one.
+        snprintf(transport_text, sizeof(transport_text), "#%s %s#",
+                 state.usb_is_hid_ready ? "ffffff" : "ff0000", LV_SYMBOL_USB);
         break;
 
     case ZMK_TRANSPORT_BLE:
@@ -71,7 +73,8 @@ static void set_status_symbol(struct zmk_widget_output_status *widget, struct ou
             ble_color = "0000ff";
         }
 
-        snprintf(transport_text, sizeof(transport_text), "#%s BLE#", ble_color);
+        snprintf(transport_text, sizeof(transport_text), "#%s %s#", ble_color,
+                 LV_SYMBOL_BLUETOOTH);
         // The profile number is only meaningful on BLE.
         snprintf(ble_text, sizeof(ble_text), "%d", state.active_profile_index + 1);
         break;
@@ -103,14 +106,14 @@ ZMK_SUBSCRIPTION(widget_output_status, zmk_usb_conn_state_changed);
 int zmk_widget_output_status_init(struct zmk_widget_output_status *widget, lv_obj_t *parent)
 {
     widget->obj = lv_obj_create(parent);
-    // One line instead of two plus a profile row.
-    lv_obj_set_size(widget->obj, 240, 30);
+    // Sits on the battery row now, at its right-hand end.
+    lv_obj_set_size(widget->obj, 56, 20);
 
     widget->transport_label = lv_label_create(widget->obj);
-    lv_obj_align(widget->transport_label, LV_ALIGN_CENTER, -14, 0);
+    lv_obj_align(widget->transport_label, LV_ALIGN_LEFT_MID, 0, 0);
 
     widget->ble_label = lv_label_create(widget->obj);
-    lv_obj_align(widget->ble_label, LV_ALIGN_CENTER, 22, 0);
+    lv_obj_align(widget->ble_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
     sys_slist_append(&widgets, &widget->node);
 
