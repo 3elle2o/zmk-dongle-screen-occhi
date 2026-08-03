@@ -37,11 +37,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define EYE_R 24
 #define EYE_DX 40 // each eye sits this far from centre
 
+// Default stroke for line shapes. Expressions can override it via line_w.
 #define LINE_W 14
-// Rounded line caps extend LINE_W/2 past each endpoint. Insetting by that much
-// makes a line shape occupy the same box as a bar, so the eyes don't lurch
-// outward when the expression changes.
-#define LINE_INSET (LINE_W / 2)
 
 // lv_trigo_sin returns a sine scaled to this. Spelled out rather than using
 // LV_TRIGO_SIN_MAX so this doesn't depend on that macro's name.
@@ -89,7 +86,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // 5 outer points alternating with 5 inner, plus a repeat of the first to close
 // the loop so the stroke joins cleanly.
 #define STAR_PTS 11
-#define STAR_INNER_PCT 35
+// Nearly at the centre, so the arms are long and the stroke still closes the
+// middle in rather than leaving a hole.
+#define STAR_INNER_PCT 16
 
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
@@ -133,6 +132,8 @@ struct expression {
     bool wander;
     enum eye_shape shape_r; // right eye override; SHAPE_SAME mirrors the left
     int16_t h_r;            // right eye height override; 0 means same as h
+    int16_t line_w;         // stroke width for line shapes; 0 means LINE_W
+    int16_t spread;         // extra separation, pushing each eye outward
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -144,7 +145,10 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_SLEEPY] = {SHAPE_BAR, EYE_W, 22, 0, 16, 11, false},
     // Winking eye is half the height of the open one, per the brief.
     [EXPR_WINK] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H / 2, 0, 0, EYE_R, false, SHAPE_BAR, EYE_H},
-    [EXPR_STARS] = {SHAPE_STAR, 64, 64, 0, 0, 0, false},
+    // Bigger and thinner-stroked than the default: at LINE_W the arms came out
+    // 17px long and 14px wide, which reads as a lumpy blob rather than a star.
+    // Spread out too, since a spiky shape needs more air than a bar.
+    [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
     [EXPR_CONFUSED] = {SHAPE_SPIRAL, EYE_W, EYE_H, 0, 0, 0, false},
     // Defined but unmapped. One entry in layer_expr brings either back.
     [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
@@ -194,7 +198,8 @@ static int32_t sin_of(int32_t deg) {
 static int32_t cos_of(int32_t deg) { return sin_of(deg + 90); }
 
 static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
-                               enum eye_shape shape, int32_t w, int32_t box_h, int32_t strain) {
+                               enum eye_shape shape, int32_t w, int32_t box_h, int32_t strain,
+                               int32_t inset) {
     int32_t h = scaled(box_h, widget->openness);
 
     // A squeeze shuts the eye vertically - the open ends come together, the
@@ -209,29 +214,29 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
     lv_point_precise_t *p = widget->pts[eye];
 
     if (shape == SHAPE_CHEVRON_UP) {
-        p[0] = (lv_point_precise_t){LINE_INSET, top + h - LINE_INSET};
-        p[1] = (lv_point_precise_t){w / 2, top + LINE_INSET};
-        p[2] = (lv_point_precise_t){w - LINE_INSET, top + h - LINE_INSET};
+        p[0] = (lv_point_precise_t){inset, top + h - inset};
+        p[1] = (lv_point_precise_t){w / 2, top + inset};
+        p[2] = (lv_point_precise_t){w - inset, top + h - inset};
     } else {
         // Left eye points right, right eye points left, so the pair squeezes
         // inward at each other.
         bool point_right = (eye == 0);
-        int32_t apex = point_right ? (w - LINE_INSET) : LINE_INSET;
-        int32_t open = point_right ? LINE_INSET : (w - LINE_INSET);
+        int32_t apex = point_right ? (w - inset) : inset;
+        int32_t open = point_right ? inset : (w - inset);
 
-        p[0] = (lv_point_precise_t){open, top + LINE_INSET};
+        p[0] = (lv_point_precise_t){open, top + inset};
         p[1] = (lv_point_precise_t){apex, top + h / 2};
-        p[2] = (lv_point_precise_t){open, top + h - LINE_INSET};
+        p[2] = (lv_point_precise_t){open, top + h - inset};
     }
 
     lv_line_set_points(widget->line[eye], p, 3);
 }
 
-static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
-                              int32_t h) {
+static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h,
+                              int32_t inset) {
     const int32_t cx = w / 2;
     const int32_t cy = h / 2;
-    const int32_t r_max = scaled(MIN(w, h) / 2 - LINE_INSET, widget->openness);
+    const int32_t r_max = scaled(MIN(w, h) / 2 - inset, widget->openness);
     const int32_t last = SPIRAL_PTS - 1;
     lv_point_precise_t *p = widget->pts[eye];
 
@@ -245,10 +250,11 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
     lv_line_set_points(widget->line[eye], p, SPIRAL_PTS);
 }
 
-static void set_star_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h) {
+static void set_star_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h,
+                            int32_t inset) {
     const int32_t cx = w / 2;
     const int32_t cy = h / 2;
-    const int32_t outer = scaled(MIN(w, h) / 2 - LINE_INSET, widget->openness);
+    const int32_t outer = scaled(MIN(w, h) / 2 - inset, widget->openness);
     const int32_t inner = (outer * STAR_INNER_PCT) / 100;
     lv_point_precise_t *p = widget->pts[eye];
 
@@ -268,10 +274,17 @@ static void set_star_points(struct zmk_widget_eyes_status *widget, int eye, int3
 static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     const struct expression *e = &expressions[widget->expr];
 
+    const int32_t lw = e->line_w ? e->line_w : LINE_W;
+    // Rounded caps extend half the stroke past each endpoint. Insetting by
+    // that much makes a line shape occupy the same box as a bar, so the eyes
+    // don't lurch outward when the expression changes.
+    const int32_t inset = lw / 2;
+
     for (int i = 0; i < 2; i++) {
         enum eye_shape shape = (i == 1 && e->shape_r != SHAPE_SAME) ? e->shape_r : e->shape;
         int32_t box_h = (i == 1 && e->h_r) ? e->h_r : e->h;
-        int16_t dx = (i == 0 ? -EYE_DX : EYE_DX) + e->dx + widget->gaze_x;
+        int16_t out = (int16_t)(EYE_DX + e->spread);
+        int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
         if (shape == SHAPE_BAR) {
@@ -294,16 +307,17 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
         switch (shape) {
         case SHAPE_SPIRAL:
-            set_spiral_points(widget, i, e->w, box_h);
+            set_spiral_points(widget, i, e->w, box_h, inset);
             break;
         case SHAPE_STAR:
-            set_star_points(widget, i, e->w, box_h);
+            set_star_points(widget, i, e->w, box_h, inset);
             break;
         default:
-            set_chevron_points(widget, i, shape, e->w, box_h, widget->strain);
+            set_chevron_points(widget, i, shape, e->w, box_h, widget->strain, inset);
             break;
         }
 
+        lv_obj_set_style_line_width(widget->line[i], lw, LV_PART_MAIN);
         lv_obj_set_size(widget->line[i], e->w, box_h);
         // Aligns by the object's own centre, exactly like the bars do - the
         // line must not carry an extra half-width offset.
