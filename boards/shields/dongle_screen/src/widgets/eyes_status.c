@@ -2,9 +2,10 @@
  * A pair of animated eyes in place of the layer label.
  *
  * Rendered as two white shapes on black - there is no sclera, so an eye is
- * just its pupil. Every expression is either a rounded bar (size + offset) or
- * a two-segment line (chevron), which keeps the whole vocabulary to two object
- * types per eye.
+ * just its pupil. Every expression is either a rounded bar (size, offset and
+ * radius) or an lv_line polyline, which keeps the whole vocabulary to two
+ * object types per eye. A fat stroke on a closed polyline fills its own
+ * interior, which is how the star gets to be solid without an image.
  *
  * On any layer other than base the expression reports the layer, because
  * knowing where you are beats personality. On the base layer the eyes are
@@ -38,12 +39,16 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define LINE_W 14
 // Rounded line caps extend LINE_W/2 past each endpoint. Insetting by that much
-// makes a chevron occupy exactly the same box as a bar, so the eyes don't
-// lurch outward when the expression changes.
+// makes a line shape occupy the same box as a bar, so the eyes don't lurch
+// outward when the expression changes.
 #define LINE_INSET (LINE_W / 2)
 
+// lv_trigo_sin returns a sine scaled to this. Spelled out rather than using
+// LV_TRIGO_SIN_MAX so this doesn't depend on that macro's name.
+#define TRIG_MAX 32767
+
 // Vertical extent is scaled by `openness` rather than set directly, so blinks
-// and expression changes share one mechanism and work on chevrons too.
+// and expression changes share one mechanism and work on every shape.
 #define OPEN_FULL 256
 #define OPEN_SHUT 12
 
@@ -52,8 +57,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define BLINK_MIN_MS 2600
 #define BLINK_MAX_MS 6400
 
-// Expression changes blink through the swap. Cutting straight from a bar to a
-// chevron is a hard pop; hiding the change behind a lid reads as intentional.
+// Expression changes blink through the swap. Cutting straight from one shape
+// to another is a hard pop; hiding it behind a lid reads as intentional.
 #define MORPH_CLOSE_MS 80
 #define MORPH_OPEN_MS 120
 
@@ -65,16 +70,26 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define GAZE_X_MAX 14
 #define GAZE_Y_MAX 6
 
-// ZMK's WPM is a rolling estimate and bounces around the boundary, so the
-// trigger and the release are deliberately separated.
-#define WPM_EXCITED_ON 60
-#define WPM_EXCITED_OFF 50
+// ZMK's WPM is a rolling estimate and bounces, so each threshold releases
+// well below where it triggers.
+#define WPM_SQUEEZE_ON 50
+#define WPM_SQUEEZE_OFF 42
+#define WPM_CONFUSED_ON 70
+#define WPM_CONFUSED_OFF 62
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
-// is how far shut the squeeze gets at the bottom of the pulse, out of
-// OPEN_FULL - 179/256 is about 70%.
+// is how far shut it gets at the bottom of the pulse, out of OPEN_FULL.
 #define STRAIN_MS 420
 #define STRAIN_MIN 179
+
+#define SPIRAL_PTS 14
+#define SPIRAL_TURNS 540 // degrees swept from centre to rim
+#define SPIN_MS 1500
+
+// 5 outer points alternating with 5 inner, plus a repeat of the first to close
+// the loop so the stroke joins cleanly.
+#define STAR_PTS 11
+#define STAR_INNER_PCT 35
 
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
@@ -82,7 +97,16 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define ZZZ_CYCLE_MS 1800
 #define ZZZ_RISE 16
 
-enum eye_shape { SHAPE_BAR, SHAPE_CHEVRON_UP, SHAPE_CHEVRON_IN };
+// SHAPE_SAME is zero so that an expression which doesn't set shape_r simply
+// mirrors its left eye, which is all but one of them.
+enum eye_shape {
+    SHAPE_SAME = 0,
+    SHAPE_BAR,
+    SHAPE_CHEVRON_UP,
+    SHAPE_CHEVRON_IN,
+    SHAPE_SPIRAL,
+    SHAPE_STAR,
+};
 
 enum expr_id {
     EXPR_NEUTRAL = 0,
@@ -92,6 +116,10 @@ enum expr_id {
     EXPR_SHOCK,
     EXPR_SLEEPY,
     EXPR_HAPPY,
+    EXPR_SUSPICIOUS,
+    EXPR_CONFUSED,
+    EXPR_WINK,
+    EXPR_STARS,
     EXPR_COUNT,
 };
 
@@ -99,33 +127,40 @@ struct expression {
     enum eye_shape shape;
     int16_t w;
     int16_t h;
+    int16_t dx; // fixed horizontal bias, for looking off to one side
     int16_t dy;
     int16_t radius;
     bool wander;
+    enum eye_shape shape_r; // right eye override; SHAPE_SAME mirrors the left
+    int16_t h_r;            // right eye height override; 0 means same as h
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
-    [EXPR_NEUTRAL] = {SHAPE_BAR, EYE_W, EYE_H, 0, EYE_R, true},
-    [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, false},
-    // Deliberately much larger than neutral - at only a few px difference the
-    // "alert" read didn't survive a glance at the panel.
-    [EXPR_WIDE] = {SHAPE_BAR, 68, 100, 0, 30, true},
-    [EXPR_DEADPAN] = {SHAPE_BAR, 60, 14, 0, 7, false},
-    [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 12, false},
-    [EXPR_SLEEPY] = {SHAPE_BAR, EYE_W, 22, 16, 11, false},
-    [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, false},
+    [EXPR_NEUTRAL] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, true},
+    [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, 0, false},
+    [EXPR_WIDE] = {SHAPE_BAR, 68, 100, 0, 0, 30, true},
+    [EXPR_DEADPAN] = {SHAPE_BAR, 60, 14, 0, 0, 7, false},
+    [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 0, 12, false},
+    [EXPR_SLEEPY] = {SHAPE_BAR, EYE_W, 22, 0, 16, 11, false},
+    // Winking eye is half the height of the open one, per the brief.
+    [EXPR_WINK] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H / 2, 0, 0, EYE_R, false, SHAPE_BAR, EYE_H},
+    [EXPR_STARS] = {SHAPE_STAR, 64, 64, 0, 0, 0, false},
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, EYE_W, EYE_H, 0, 0, 0, false},
+    // Defined but unmapped. One entry in layer_expr brings either back.
+    [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
+    [EXPR_SUSPICIOUS] = {SHAPE_BAR, EYE_W, 28, 13, 2, 14, false},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
 static const enum expr_id layer_expr[] = {
-    [0] = EXPR_NEUTRAL, [1] = EXPR_HAPPY,   [2] = EXPR_WIDE,
+    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_STARS,
     [3] = EXPR_DEADPAN, [4] = EXPR_SHOCK,
 };
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
-static bool wpm_excited;
+static uint8_t wpm_level; // 0 none, 1 squeezed, 2 confused
 static lv_timer_t *zzz_timer;
 
 static uint32_t rng_state;
@@ -149,23 +184,31 @@ static int32_t rnd_range(int32_t lo, int32_t hi) {
 
 static int32_t scaled(int32_t v, int32_t openness) { return (v * openness) / OPEN_FULL; }
 
+static int32_t sin_of(int32_t deg) {
+    while (deg < 0) {
+        deg += 360;
+    }
+    return lv_trigo_sin((int16_t)(deg % 360));
+}
+
+static int32_t cos_of(int32_t deg) { return sin_of(deg + 90); }
+
 static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
-                               const struct expression *e) {
-    const int32_t w = e->w;
-    int32_t h = scaled(e->h, widget->openness);
+                               enum eye_shape shape, int32_t w, int32_t box_h, int32_t strain) {
+    int32_t h = scaled(box_h, widget->openness);
 
     // A squeeze shuts the eye vertically - the open ends come together, the
     // way a real one scrunches. Driving the apex in and out horizontally
     // instead just looks like the point twitching.
-    if (e->shape == SHAPE_CHEVRON_IN) {
-        int32_t k = STRAIN_MIN + ((OPEN_FULL - STRAIN_MIN) * widget->strain) / OPEN_FULL;
+    if (shape == SHAPE_CHEVRON_IN) {
+        int32_t k = STRAIN_MIN + ((OPEN_FULL - STRAIN_MIN) * strain) / OPEN_FULL;
         h = (h * k) / OPEN_FULL;
     }
 
-    const int32_t top = (e->h - h) / 2; // keep the shape vertically centred as it closes
+    const int32_t top = (box_h - h) / 2; // keep the shape vertically centred as it closes
     lv_point_precise_t *p = widget->pts[eye];
 
-    if (e->shape == SHAPE_CHEVRON_UP) {
+    if (shape == SHAPE_CHEVRON_UP) {
         p[0] = (lv_point_precise_t){LINE_INSET, top + h - LINE_INSET};
         p[1] = (lv_point_precise_t){w / 2, top + LINE_INSET};
         p[2] = (lv_point_precise_t){w - LINE_INSET, top + h - LINE_INSET};
@@ -184,25 +227,55 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
     lv_line_set_points(widget->line[eye], p, 3);
 }
 
+static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                              int32_t h) {
+    const int32_t cx = w / 2;
+    const int32_t cy = h / 2;
+    const int32_t r_max = scaled(MIN(w, h) / 2 - LINE_INSET, widget->openness);
+    const int32_t last = SPIRAL_PTS - 1;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    for (int i = 0; i < SPIRAL_PTS; i++) {
+        int32_t deg = widget->spin + (SPIRAL_TURNS * i) / last;
+        int32_t r = (r_max * i) / last;
+        p[i].x = cx + (r * cos_of(deg)) / TRIG_MAX;
+        p[i].y = cy + (r * sin_of(deg)) / TRIG_MAX;
+    }
+
+    lv_line_set_points(widget->line[eye], p, SPIRAL_PTS);
+}
+
+static void set_star_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h) {
+    const int32_t cx = w / 2;
+    const int32_t cy = h / 2;
+    const int32_t outer = scaled(MIN(w, h) / 2 - LINE_INSET, widget->openness);
+    const int32_t inner = (outer * STAR_INNER_PCT) / 100;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    // Starts at -90 so a point faces up. A fat stroke over this path closes
+    // the middle in, which is what makes the star look solid.
+    for (int i = 0; i < STAR_PTS - 1; i++) {
+        int32_t deg = -90 + i * 36;
+        int32_t r = (i % 2 == 0) ? outer : inner;
+        p[i].x = cx + (r * cos_of(deg)) / TRIG_MAX;
+        p[i].y = cy + (r * sin_of(deg)) / TRIG_MAX;
+    }
+    p[STAR_PTS - 1] = p[0]; // close the loop
+
+    lv_line_set_points(widget->line[eye], p, STAR_PTS);
+}
+
 static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     const struct expression *e = &expressions[widget->expr];
-    bool use_line = (e->shape != SHAPE_BAR);
 
     for (int i = 0; i < 2; i++) {
-        int16_t dx = (i == 0 ? -EYE_DX : EYE_DX) + widget->gaze_x;
+        enum eye_shape shape = (i == 1 && e->shape_r != SHAPE_SAME) ? e->shape_r : e->shape;
+        int32_t box_h = (i == 1 && e->h_r) ? e->h_r : e->h;
+        int16_t dx = (i == 0 ? -EYE_DX : EYE_DX) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
-        if (use_line) {
-            lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
-
-            set_chevron_points(widget, i, e);
-            lv_obj_set_size(widget->line[i], e->w, e->h);
-            // Aligns by the object's own centre, exactly like the bars do -
-            // the line must not carry an extra half-width offset.
-            lv_obj_align(widget->line[i], LV_ALIGN_CENTER, dx, dy);
-        } else {
-            int32_t h = scaled(e->h, widget->openness);
+        if (shape == SHAPE_BAR) {
+            int32_t h = scaled(box_h, widget->openness);
             if (h < 2) {
                 h = 2;
             }
@@ -213,7 +286,28 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
+            continue;
         }
+
+        lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
+
+        switch (shape) {
+        case SHAPE_SPIRAL:
+            set_spiral_points(widget, i, e->w, box_h);
+            break;
+        case SHAPE_STAR:
+            set_star_points(widget, i, e->w, box_h);
+            break;
+        default:
+            set_chevron_points(widget, i, shape, e->w, box_h, widget->strain);
+            break;
+        }
+
+        lv_obj_set_size(widget->line[i], e->w, box_h);
+        // Aligns by the object's own centre, exactly like the bars do - the
+        // line must not carry an extra half-width offset.
+        lv_obj_align(widget->line[i], LV_ALIGN_CENTER, dx, dy);
     }
 }
 
@@ -226,6 +320,12 @@ static void openness_anim_cb(void *var, int32_t v) {
 static void strain_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->strain = (int16_t)v;
+    apply_geometry(widget);
+}
+
+static void spin_anim_cb(void *var, int32_t v) {
+    struct zmk_widget_eyes_status *widget = var;
+    widget->spin = (int16_t)v;
     apply_geometry(widget);
 }
 
@@ -252,22 +352,37 @@ static void animate(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t cb
     lv_anim_start(&a);
 }
 
-static void stop_strain(struct zmk_widget_eyes_status *widget) {
-    lv_anim_delete(widget, strain_anim_cb);
-    widget->strain = OPEN_FULL;
-}
-
-static void start_strain(struct zmk_widget_eyes_status *widget) {
+static void loop_anim(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t cb, int32_t from,
+                      int32_t to, uint32_t ms, bool playback) {
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, widget);
-    lv_anim_set_exec_cb(&a, strain_anim_cb);
-    lv_anim_set_values(&a, OPEN_FULL, 0);
-    lv_anim_set_time(&a, STRAIN_MS);
-    lv_anim_set_playback_time(&a, STRAIN_MS);
+    lv_anim_set_exec_cb(&a, cb);
+    lv_anim_set_values(&a, from, to);
+    lv_anim_set_time(&a, ms);
+    if (playback) {
+        lv_anim_set_playback_time(&a, ms);
+        lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    } else {
+        lv_anim_set_path_cb(&a, lv_anim_path_linear);
+    }
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
     lv_anim_start(&a);
+}
+
+// Only one of these should ever be running, so both are cleared on every
+// expression change and the incoming one restarted.
+static void set_idle_motion(struct zmk_widget_eyes_status *widget) {
+    lv_anim_delete(widget, strain_anim_cb);
+    lv_anim_delete(widget, spin_anim_cb);
+    widget->strain = OPEN_FULL;
+    widget->spin = 0;
+
+    if (widget->expr == EXPR_SQUEEZED) {
+        loop_anim(widget, strain_anim_cb, OPEN_FULL, 0, STRAIN_MS, true);
+    } else if (widget->expr == EXPR_CONFUSED) {
+        loop_anim(widget, spin_anim_cb, 0, 359, SPIN_MS, false);
+    }
 }
 
 static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
@@ -289,31 +404,25 @@ static void zzz_timer_cb(lv_timer_t *timer) {
 
 static void morph_open(lv_anim_t *a) {
     struct zmk_widget_eyes_status *widget = a->var;
-    const struct expression *e;
 
     // Swapped at the bottom of the blink, where nothing is visible.
     widget->expr = widget->pending_expr;
-    e = &expressions[widget->expr];
 
+    const struct expression *e = &expressions[widget->expr];
     if (!e->wander && (widget->gaze_x || widget->gaze_y)) {
         lv_anim_delete(widget, gaze_anim_cb);
         widget->gaze_x = 0;
         widget->gaze_y = 0;
     }
 
-    if (widget->expr == EXPR_SQUEEZED) {
-        start_strain(widget);
-    } else {
-        stop_strain(widget);
-    }
-
+    set_idle_motion(widget);
     apply_geometry(widget);
     animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, MORPH_OPEN_MS, 0,
             lv_anim_path_ease_out, NULL);
 }
 
 static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id id) {
-    if (widget->expr == id) {
+    if (widget->pending_expr == id && widget->expr == id) {
         return;
     }
 
@@ -370,6 +479,30 @@ struct eyes_state {
     bool idle;
 };
 
+static void update_wpm_level(uint8_t wpm) {
+    switch (wpm_level) {
+    case 2:
+        if (wpm <= WPM_CONFUSED_OFF) {
+            wpm_level = (wpm > WPM_SQUEEZE_OFF) ? 1 : 0;
+        }
+        break;
+    case 1:
+        if (wpm >= WPM_CONFUSED_ON) {
+            wpm_level = 2;
+        } else if (wpm <= WPM_SQUEEZE_OFF) {
+            wpm_level = 0;
+        }
+        break;
+    default:
+        if (wpm >= WPM_CONFUSED_ON) {
+            wpm_level = 2;
+        } else if (wpm >= WPM_SQUEEZE_ON) {
+            wpm_level = 1;
+        }
+        break;
+    }
+}
+
 static enum expr_id resolve(struct eyes_state state) {
     if (state.layer != 0) {
         if (state.layer < ARRAY_SIZE(layer_expr)) {
@@ -382,14 +515,17 @@ static enum expr_id resolve(struct eyes_state state) {
         return EXPR_SLEEPY;
     }
 
-    if (wpm_excited) {
-        wpm_excited = (state.wpm > WPM_EXCITED_OFF);
-    } else {
-        wpm_excited = (state.wpm >= WPM_EXCITED_ON);
-    }
+    update_wpm_level(state.wpm);
 
-    // Squeezed reads as effort, which is what typing fast actually feels like.
-    return wpm_excited ? EXPR_SQUEEZED : EXPR_NEUTRAL;
+    // Squeezed reads as effort; past that it's just overwhelmed.
+    switch (wpm_level) {
+    case 2:
+        return EXPR_CONFUSED;
+    case 1:
+        return EXPR_SQUEEZED;
+    default:
+        return EXPR_NEUTRAL;
+    }
 }
 
 static void eyes_update_cb(struct eyes_state state) {
@@ -487,6 +623,7 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     widget->pending_expr = EXPR_NEUTRAL;
     widget->openness = OPEN_FULL;
     widget->strain = OPEN_FULL;
+    widget->spin = 0;
     widget->gaze_x = 0;
     widget->gaze_y = 0;
     widget->idle = false;

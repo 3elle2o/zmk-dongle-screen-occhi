@@ -7,6 +7,9 @@
 #include <lvgl.h>
 #include <zephyr/kernel.h>
 
+// Chevrons need 3 points; the confused spiral needs the rest.
+#define EYE_MAX_PTS 14
+
 // Each eye owns both a bar and a line object. Expressions swap which one is
 // visible rather than creating and deleting objects on the display thread.
 struct zmk_widget_eyes_status {
@@ -14,7 +17,7 @@ struct zmk_widget_eyes_status {
     lv_obj_t *obj;
     lv_obj_t *bar[2];
     lv_obj_t *line[2];
-    lv_point_precise_t pts[2][3];
+    lv_point_precise_t pts[2][EYE_MAX_PTS];
     lv_obj_t *zzz[3]; // drift up and fade once idle has gone on a while
 
     uint8_t expr;
@@ -22,6 +25,7 @@ struct zmk_widget_eyes_status {
 
     int16_t openness; // 0-256, scales vertical extent; drives blinks and morphs
     int16_t strain;   // 0-256, how hard a squeeze is currently pushing
+    int16_t spin;     // 0-359, rotation of the confused spiral
     int16_t gaze_x;
     int16_t gaze_y;
     bool idle;
