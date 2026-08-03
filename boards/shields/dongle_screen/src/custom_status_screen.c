@@ -59,8 +59,9 @@ lv_obj_t *zmk_display_status_screen()
 #if CONFIG_DONGLE_SCREEN_OUTPUT_ACTIVE
     zmk_widget_output_status_init(&output_status_widget, screen);
     // Shares the bottom row with the batteries, sitting at its right-hand end,
-    // which frees the whole top of the screen for the eyes.
-    lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_BOTTOM_MID, 92, 0);
+    // which frees the whole top of the screen for the eyes. Pulled in from the
+    // right so the case lip doesn't clip the profile number.
+    lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_BOTTOM_MID, 80, 0);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE
@@ -81,11 +82,10 @@ lv_obj_t *zmk_display_status_screen()
 #if CONFIG_DONGLE_SCREEN_EYES_ACTIVE
     zmk_widget_eyes_status_init(&eyes_status_widget, screen);
     // x: nudged right to sit centred in the case window rather than on the
-    // panel. 17px is 2mm at this panel's 8.58px/mm (1.69" 240x280, active area
-    // 27.97 x 32.63mm). Note LV_DPI_DEF=261 in Kconfig implies 10.3px/mm and
-    // is simply wrong for this display.
+    // panel, which is mounted off-centre with a lip covering the right edge.
+    // Set by eye against the actual case - a calculated 2mm (17px) overshot.
     // y: centred on the space above the battery row, not on the screen.
-    lv_obj_align(zmk_widget_eyes_status_obj(&eyes_status_widget), LV_ALIGN_CENTER, 17, -10);
+    lv_obj_align(zmk_widget_eyes_status_obj(&eyes_status_widget), LV_ALIGN_CENTER, 10, -10);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE

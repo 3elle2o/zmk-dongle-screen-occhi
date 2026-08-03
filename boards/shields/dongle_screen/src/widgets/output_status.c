@@ -106,8 +106,12 @@ ZMK_SUBSCRIPTION(widget_output_status, zmk_usb_conn_state_changed);
 int zmk_widget_output_status_init(struct zmk_widget_output_status *widget, lv_obj_t *parent)
 {
     widget->obj = lv_obj_create(parent);
-    // Sits on the battery row now, at its right-hand end.
-    lv_obj_set_size(widget->obj, 56, 20);
+    // Strip the default theme styling. A plain lv_obj carries padding and a
+    // border, which inset the symbol from the left (reading as a gap) while
+    // pushing the profile number out to the right, where the case lip clips
+    // it. Without them the box is exactly the size it says it is.
+    lv_obj_remove_style_all(widget->obj);
+    lv_obj_set_size(widget->obj, 44, 20);
 
     widget->transport_label = lv_label_create(widget->obj);
     lv_obj_align(widget->transport_label, LV_ALIGN_LEFT_MID, 0, 0);

@@ -70,8 +70,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define WPM_EXCITED_ON 60
 #define WPM_EXCITED_OFF 50
 
-// Squeezing is an effort, so it pulses rather than sitting still.
+// Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
+// is how far shut the squeeze gets at the bottom of the pulse, out of
+// OPEN_FULL - 179/256 is about 70%.
 #define STRAIN_MS 420
+#define STRAIN_MIN 179
 
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
@@ -149,7 +152,16 @@ static int32_t scaled(int32_t v, int32_t openness) { return (v * openness) / OPE
 static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
                                const struct expression *e) {
     const int32_t w = e->w;
-    const int32_t h = scaled(e->h, widget->openness);
+    int32_t h = scaled(e->h, widget->openness);
+
+    // A squeeze shuts the eye vertically - the open ends come together, the
+    // way a real one scrunches. Driving the apex in and out horizontally
+    // instead just looks like the point twitching.
+    if (e->shape == SHAPE_CHEVRON_IN) {
+        int32_t k = STRAIN_MIN + ((OPEN_FULL - STRAIN_MIN) * widget->strain) / OPEN_FULL;
+        h = (h * k) / OPEN_FULL;
+    }
+
     const int32_t top = (e->h - h) / 2; // keep the shape vertically centred as it closes
     lv_point_precise_t *p = widget->pts[eye];
 
@@ -159,14 +171,9 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
         p[2] = (lv_point_precise_t){w - LINE_INSET, top + h - LINE_INSET};
     } else {
         // Left eye points right, right eye points left, so the pair squeezes
-        // inward. How far the point protrudes is what the strain animation
-        // pushes on.
-        int32_t reach = w - 2 * LINE_INSET;
-        int32_t k = 205 + (51 * widget->strain) / OPEN_FULL; // 0.80 - 1.00
-        int32_t depth = (reach * k) / OPEN_FULL;
-
+        // inward at each other.
         bool point_right = (eye == 0);
-        int32_t apex = point_right ? (LINE_INSET + depth) : (w - LINE_INSET - depth);
+        int32_t apex = point_right ? (w - LINE_INSET) : LINE_INSET;
         int32_t open = point_right ? LINE_INSET : (w - LINE_INSET);
 
         p[0] = (lv_point_precise_t){open, top + LINE_INSET};
