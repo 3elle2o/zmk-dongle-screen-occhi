@@ -189,15 +189,17 @@ enum eye_shape {
 // second contour in the eye's own path: an even-odd fill crosses it twice and
 // leaves it empty. The stroke is given only the outer contour, so the two
 // bridging edges between the contours are never drawn.
-// cos(2t) to the sixth, not the fourth: at the fourth the radius was still 66%
-// of the tip only 15 degrees off-axis, so the arms stayed fat near the base and
-// the whole thing read as a plus sign. The sixth drops that to 46%.
+// A diamond with slightly concave sides, not a four-pointed star. Both were
+// tried as cos(2t) raised to a power, which is the wrong family: any version
+// of it pinches to a waist between the tips, so it came out as a plus sign
+// with fat arms or a thin cross with needles, never a diamond.
 //
-// 33 points because sharp arms need describing - at 25 only two samples fell on
-// each side of an arm, which made them visibly faceted.
+// A rhombus is 1/(|cos t| + |sin t|), which sits at 70.7% of the tip radius
+// midway between two tips. Squaring the denominator bows the sides inward to
+// 50%. Averaging the two lands at 60%: concave, but only slightly, which is
+// what the shape wants.
 #define SPARK_PTS 33
 #define SPARK_FILL_PCT 100 // tip reach, as a proportion of the eye's half-extent
-#define SPARK_IN_PCT 8     // waist between the tips, as a proportion of the tip
 #define SPARK_EDGE_W 2     // black outline, purely to anti-alias the hole's edge
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
@@ -531,13 +533,18 @@ static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, in
     for (int i = 0; i < SPARK_PTS; i++) {
         int32_t deg = (360 * (i % (SPARK_PTS - 1))) / (SPARK_PTS - 1);
 
-        int32_t c = cos_of(2 * deg);
-        int32_t sq = (c * c) / TRIG_MAX;
-        int32_t u = (sq * sq) / TRIG_MAX;
-        u = (u * sq) / TRIG_MAX;
+        // Scaled down to 128ths before squaring: at full scale the square of
+        // the denominator overflows a 32-bit int right at the diagonal.
+        int32_t co = cos_of(deg);
+        int32_t si = sin_of(deg);
+        int32_t sn = ((co < 0 ? -co : co) + (si < 0 ? -si : si)) / 256;
+        if (sn < 1) {
+            sn = 1;
+        }
 
-        int32_t r = (SPARK_IN_PCT * TRIG_MAX) / 100;
-        r += ((TRIG_MAX - r) * u) / TRIG_MAX;
+        int32_t rhombus = (128 * TRIG_MAX) / sn;
+        int32_t concave = (128 * 128 * TRIG_MAX) / (sn * sn);
+        int32_t r = (rhombus + concave) / 2;
 
         // No openness scaling needed here: eh already carries it, so the
         // sparkle closes with the eye automatically.
