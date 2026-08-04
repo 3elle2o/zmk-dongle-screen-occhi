@@ -216,9 +216,10 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
     // Wider box means wider coil spacing, so the stroke goes up with it to
     // hold the reference's 1:1 stroke-to-gap.
-    // Can't take the full share of the widening: at 86px these are already
-    // the widest pair, and pushing them further reaches the case lip.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 8},
+    // Deliberately excluded from the widening. EYE_DX + 6 puts these 52px from
+    // centre, exactly where they sat before it - at 86px per eye they were
+    // already far enough apart, and any wider reaches the case lip.
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 6},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
