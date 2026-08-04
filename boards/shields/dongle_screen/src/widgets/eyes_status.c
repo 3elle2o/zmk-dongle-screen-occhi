@@ -177,7 +177,11 @@ static const uint8_t zigzag_jitter[] = {0, 3, 1, 4, 2, 5};
 static lv_color_t eye_fill_buf[2][EYE_FILL_W * EYE_FILL_H];
 
 enum expr_id {
-    EXPR_NEUTRAL = 0,
+    // layer_expr only, never an actual expression: this layer has none, so the
+    // eyes keep doing whatever they were already doing. Zero so that any layer
+    // left out of the table gets this behaviour by default.
+    EXPR_NONE = 0,
+    EXPR_NEUTRAL,
     EXPR_SQUEEZED,
     EXPR_WIDE,
     EXPR_DEADPAN,
@@ -246,11 +250,11 @@ static const struct expression expressions[EXPR_COUNT] = {
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
 static const enum expr_id layer_expr[] = {
-    // sym has no expression of its own for now, so it shows the resting face.
-    // Note that means it looks like the base layer but without the activity
-    // and typing-speed reactions, which only run on layer 0.
-    [0] = EXPR_NEUTRAL, [1] = EXPR_NEUTRAL, [2] = EXPR_UNAMUSED,
-    [3] = EXPR_ANGRY,   [4] = EXPR_SHOCK,
+    // Layer 0's entry is never read - the base layer is handled before this
+    // table is consulted. sym is EXPR_NONE, so holding it changes nothing:
+    // whatever the eyes were showing carries on.
+    [0] = EXPR_NONE,  [1] = EXPR_NONE,  [2] = EXPR_UNAMUSED,
+    [3] = EXPR_ANGRY, [4] = EXPR_SHOCK,
 };
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
@@ -897,11 +901,15 @@ static void update_wpm_level(uint8_t wpm) {
 }
 
 static enum expr_id resolve(struct eyes_state state) {
-    if (state.layer != 0) {
-        if (state.layer < ARRAY_SIZE(layer_expr)) {
-            return layer_expr[state.layer];
+    // A layer with an expression of its own reports it, and that outranks
+    // everything below. A layer without one - or one past the end of the table
+    // - falls through to the activity and typing behaviour, so holding it
+    // leaves the eyes doing whatever they were already doing.
+    if (state.layer != 0 && state.layer < ARRAY_SIZE(layer_expr)) {
+        enum expr_id id = layer_expr[state.layer];
+        if (id != EXPR_NONE) {
+            return id;
         }
-        return EXPR_NEUTRAL;
     }
 
     if (state.idle) {
