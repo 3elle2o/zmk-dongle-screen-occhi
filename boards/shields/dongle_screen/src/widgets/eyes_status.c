@@ -177,9 +177,17 @@ enum eye_shape {
 #define QUIRK_SMALL_PCT 62
 
 // Highlight punched out of the eye, offset up and outward from its centre.
-#define SPARK_D 16
-#define SPARK_DX 11
-#define SPARK_DY 19
+// A four-pointed sparkle rather than a circle: radius follows cos(2t) raised
+// to the fourth, which puts sharp tips on the axes and pinches the sides
+// inward between them. Traced once at init - it never changes - and stroked
+// black wide enough to fill itself.
+#define SPARK_D 22
+#define SPARK_DX 12
+#define SPARK_DY 20
+#define SPARK_PTS 25
+#define SPARK_R_OUT 9
+#define SPARK_R_IN 2
+#define SPARK_LINE_W 5
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
@@ -945,6 +953,30 @@ static void blink_timer_cb(lv_timer_t *timer) {
     lv_timer_set_period(timer, rnd_range(BLINK_MIN_MS, BLINK_MAX_MS));
 }
 
+// Both eyes draw the same sparkle, so one path serves both. lv_line keeps the
+// pointer rather than copying, which is fine for something that never changes.
+static lv_point_precise_t spark_pts[SPARK_PTS];
+
+static void build_spark_path(void) {
+    const int32_t c0 = SPARK_D / 2;
+
+    for (int i = 0; i < SPARK_PTS - 1; i++) {
+        int32_t deg = (360 * i) / (SPARK_PTS - 1);
+
+        // cos(2t)^4: 1 on the axes, falling away steeply, so the sides bow in
+        // toward the centre instead of running straight between the tips.
+        int32_t c = cos_of(2 * deg);
+        int32_t u = (c * c) / TRIG_MAX;
+        u = (u * u) / TRIG_MAX;
+
+        int32_t r = SPARK_R_IN + ((SPARK_R_OUT - SPARK_R_IN) * u) / TRIG_MAX;
+        spark_pts[i].x = c0 + (r * cos_of(deg)) / TRIG_MAX;
+        spark_pts[i].y = c0 + (r * sin_of(deg)) / TRIG_MAX;
+    }
+
+    spark_pts[SPARK_PTS - 1] = spark_pts[0];
+}
+
 // Which variation is currently standing in for the resting face, if any.
 // resolve() only lets it through when the face would otherwise be neutral, so
 // a layer or a burst of typing takes precedence and it simply lapses.
@@ -1081,6 +1113,11 @@ static void quirk_timer_cb(lv_timer_t *timer) {
     if (quirk != EXPR_NONE) {
         quirk = EXPR_NONE;
         lv_timer_set_period(timer, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS));
+    } else if (widget->idle) {
+        // Don't arm one while asleep. resolve() would suppress it anyway -
+        // idle returns before the quirk is consulted - but arming it here
+        // would mean waking up mid-quirk for no reason.
+        lv_timer_set_period(timer, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS));
     } else {
         quirk = quirks[rnd() % ARRAY_SIZE(quirks)];
         lv_timer_set_period(timer, QUIRK_HOLD_MS);
@@ -1169,15 +1206,18 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    build_spark_path();
+
     // Created after the eyes so they draw on top of them.
     for (int i = 0; i < 2; i++) {
-        widget->spark[i] = lv_obj_create(widget->obj);
+        widget->spark[i] = lv_line_create(widget->obj);
         lv_obj_remove_style_all(widget->spark[i]);
         lv_obj_set_size(widget->spark[i], SPARK_D, SPARK_D);
-        lv_obj_set_style_bg_color(widget->spark[i], lv_color_black(), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(widget->spark[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_radius(widget->spark[i], LV_RADIUS_CIRCLE, LV_PART_MAIN);
-        lv_obj_remove_flag(widget->spark[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_line_color(widget->spark[i], lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_line_width(widget->spark[i], SPARK_LINE_W, LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(widget->spark[i], true, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(widget->spark[i], 0, LV_PART_MAIN);
+        lv_line_set_points(widget->spark[i], spark_pts, SPARK_PTS);
         lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
     }
 
