@@ -205,7 +205,9 @@ static const struct expression expressions[EXPR_COUNT] = {
     // The resting face. Both derived shapes below are cut out of this one, so
     // changing it changes them.
     [EXPR_NEUTRAL] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, true},
-    [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, 0, false},
+    // Doesn't blink either: these eyes are shut too, and the strain pulse
+    // already moves them, so a blink on top competes with it.
+    [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, 0, false, 0, 0, 0, false, 0, true},
     [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 0, 12, false},
     // Box height sets the bow: depth is h minus the stroke. Doesn't blink -
     // these eyes are already shut, so collapsing and reopening the arc reads
