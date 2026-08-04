@@ -392,7 +392,17 @@ static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_
         p[i + 1] = half[i];
     }
 
+    // Repeat the first point so the stroke closes. lv_line draws an open
+    // polyline while the fill treats the path as closed, so without this the
+    // top edge would be filled but never stroked - a hard flat edge against
+    // rounded strokes everywhere else, which reads as a notch cut out of the
+    // shape. Closing it also draws the lid across the top of the bowl, which
+    // is what the shape wants anyway.
     int total = n + 1;
+    if (total < EYE_MAX_PTS) {
+        p[total++] = p[0];
+    }
+
     lv_line_set_points(widget->line[eye], p, total);
     return total;
 }
@@ -421,6 +431,13 @@ static int set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int3
     int32_t yb = eye ? cut_out : cut_in;
 
     n = clip_below(p, rr, n, x0, ew, ya, yb);
+
+    // Closed, for the same reason as the lid: the cut edge is filled, so it
+    // has to be stroked too or it reads as a slice taken out of the shape
+    // rather than as its top.
+    if (n < EYE_MAX_PTS) {
+        p[n++] = p[0];
+    }
 
     lv_line_set_points(widget->line[eye], p, n);
     return n;
