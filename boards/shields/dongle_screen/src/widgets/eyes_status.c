@@ -167,8 +167,11 @@ static const uint8_t zigzag_jitter[] = {0, 3, 1, 4, 2, 5};
 // Canvas behind the outline, for shapes that need a solid interior. lv_line
 // only strokes, and widening the stroke until it closes a shape destroys the
 // detail that defined it. Sized to the largest filled shape with headroom.
-#define EYE_FILL_W 72
-#define EYE_FILL_H 48
+// Sized to the largest filled shape (62 x 40) plus a little margin, not
+// generously - each pixel here costs 3 bytes of RAM twice over, and this
+// dongle has very little to spare.
+#define EYE_FILL_W 64
+#define EYE_FILL_H 44
 // A scanline crosses at most this many edges. Nine-point shapes need far less.
 #define FILL_MAX_X 12
 
