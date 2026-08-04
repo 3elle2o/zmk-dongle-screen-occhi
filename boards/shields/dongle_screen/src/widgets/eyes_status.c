@@ -111,11 +111,15 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // 1.5s whipped the free outer end round like a fan blade; 3.5s was sedate.
 #define SPIN_MS 2400
 
-// The drift has its own slow driver rather than being derived from `spin`.
-// Dividing spin down would have snapped every time it wrapped 359 -> 0, since
-// half of a wrap is a 180 degree jump.
-#define WOBBLE_MS 7000
-#define WOBBLE_PX 2
+// The sway has its own driver rather than being derived from `spin`, so the
+// two are independent: each spiral keeps turning about its own centre at
+// SPIN_MS while the pair together swings round a small circle at WOBBLE_MS.
+// Deriving it from spin would also have snapped on every 359 -> 0 wrap.
+//
+// Fast and wide enough to read as a cartoon sway. It was 7s and 2px, which
+// was a drift you had to look for.
+#define WOBBLE_MS 1400
+#define WOBBLE_PX 5
 
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
@@ -564,13 +568,13 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             dx += widget->shake;
         }
 
-        // Each spiral drifts on its own slow circle, a third of a turn out of
-        // phase with the other, so the pair looks unsteady without either one
-        // appearing to twitch.
+        // Both spirals swing round the same circle in lockstep, so the whole
+        // face sways rather than each eye wandering off on its own. Sharing
+        // the phase is the point: independent drift reads as two loose
+        // objects, linked drift reads as one dizzy head.
         if (shape == SHAPE_SPIRAL) {
-            int32_t phase = widget->wob + (i ? 120 : 0);
-            dx += (int16_t)((cos_of(phase) * WOBBLE_PX) / TRIG_MAX);
-            dy += (int16_t)((sin_of(phase) * WOBBLE_PX) / TRIG_MAX);
+            dx += (int16_t)((cos_of(widget->wob) * WOBBLE_PX) / TRIG_MAX);
+            dy += (int16_t)((sin_of(widget->wob) * WOBBLE_PX) / TRIG_MAX);
         }
 
         if (shape == SHAPE_BAR) {
