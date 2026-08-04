@@ -4,8 +4,9 @@
  * Rendered as two white shapes on black - there is no sclera, so an eye is
  * just its pupil. Every expression is either a rounded bar (size, offset and
  * radius) or an lv_line polyline, which keeps the whole vocabulary to two
- * object types per eye. A fat stroke on a closed polyline fills its own
- * interior, which is how the star gets to be solid without an image.
+ * object types per eye, plus a canvas beneath for the two shapes that need a
+ * solid interior. Those two are cut out of the neutral shape rather than
+ * drawn independently, so the whole set shares one silhouette.
  *
  * On any layer other than base the expression reports the layer, because
  * knowing where you are beats personality. On the base layer the eyes are
@@ -55,8 +56,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // keep stepping every 10ms, but the screen only samples them every 80.
 #define BLINK_CLOSE_MS 80
 #define BLINK_OPEN_MS 110
-#define BLINK_MIN_MS 2600
-#define BLINK_MAX_MS 6400
+// Roughly a third as often as before. At 2.6-6.4s it caught the eye
+// constantly, which is the opposite of what a resting face should do.
+#define BLINK_MIN_MS 7000
+#define BLINK_MAX_MS 16000
 
 // Expression changes blink through the swap. Cutting straight from one shape
 // to another is a hard pop; hiding it behind a lid reads as intentional.
@@ -110,32 +113,19 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define WOBBLE_MS 7000
 #define WOBBLE_PX 2
 
-// 5 outer points alternating with 5 inner, plus a repeat of the first to close
-// the loop so the stroke joins cleanly.
-#define STAR_PTS 11
-// Nearly at the centre, so the arms are long and the stroke still closes the
-// middle in rather than leaving a hole.
-#define STAR_INNER_PCT 16
-
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
 #define ZZZ_DELAY_MS 20000
 #define ZZZ_CYCLE_MS 1800
 #define ZZZ_RISE 16
 
-// SHAPE_SAME is zero so that an expression which doesn't set shape_r simply
-// mirrors its left eye, which is all but one of them.
 enum eye_shape {
-    SHAPE_SAME = 0,
     SHAPE_BAR,
-    SHAPE_CHEVRON_UP,
     SHAPE_CHEVRON_IN,
     SHAPE_ARC_DOWN,
-    SHAPE_ZIGZAG,
     SHAPE_LIDDED,
     SHAPE_ANGRY,
     SHAPE_SPIRAL,
-    SHAPE_STAR,
 };
 
 // Points per corner when tracing a rounded rectangle. Both derived shapes
@@ -150,16 +140,6 @@ enum eye_shape {
 
 // Unamused is neutral's lower half with a short tail off the top edge.
 #define LID_TAIL 14
-
-// Six points is five passes across the eye. More, thinner passes read as a
-// scribble; fewer, fatter ones read as a bar with notches.
-#define ZIGZAG_PTS 6
-
-// Inward nudges so the passes don't all start and stop on the same two
-// columns. Applied toward the middle only, never outward, so a jittered point
-// can't land outside the line object and get clipped. The two eyes read the
-// table from different offsets so they aren't identical.
-static const uint8_t zigzag_jitter[] = {0, 3, 1, 4, 2, 5};
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
@@ -189,15 +169,9 @@ enum expr_id {
     EXPR_NONE = 0,
     EXPR_NEUTRAL,
     EXPR_SQUEEZED,
-    EXPR_WIDE,
-    EXPR_DEADPAN,
     EXPR_SHOCK,
     EXPR_SLEEPY,
-    EXPR_HAPPY,
-    EXPR_SUSPICIOUS,
     EXPR_CONFUSED,
-    EXPR_WINK,
-    EXPR_STARS,
     EXPR_UNAMUSED,
     EXPR_ANGRY,
     EXPR_COUNT,
@@ -211,51 +185,28 @@ struct expression {
     int16_t dy;
     int16_t radius;
     bool wander;
-    enum eye_shape shape_r; // right eye override; SHAPE_SAME mirrors the left
-    int16_t h_r;            // right eye height override; 0 means same as h
-    int16_t line_w;         // stroke width for line shapes; 0 means LINE_W
-    int16_t spread;         // extra separation, pushing each eye outward
-    int16_t rot;            // tilt in 0.1 degrees, mirrored between the eyes
-    bool outline;           // bar shapes only: draw as a ring, not a solid
-    bool filled;            // line shapes only: fill the traced path solid
+    int16_t line_w; // stroke width for line shapes; 0 means LINE_W
+    int16_t spread; // extra separation, pushing each eye outward
+    int16_t rot;    // tilt in 0.1 degrees, mirrored between the eyes
+    bool filled;    // line shapes only: fill the traced path solid
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
+    // The resting face. Both derived shapes below are cut out of this one, so
+    // changing it changes them.
     [EXPR_NEUTRAL] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, true},
     [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, 0, false},
-    [EXPR_WIDE] = {SHAPE_BAR, 68, 100, 0, 0, 30, true},
-    [EXPR_DEADPAN] = {SHAPE_BAR, 60, 14, 0, 0, 7, false},
     [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 0, 12, false},
-    // Box height sets the bow: depth is h minus the stroke, so 26 gives a 12px
-    // dip across a 42px span. Shallow enough to read as settled rather than
-    // as a frown.
+    // Box height sets the bow: depth is h minus the stroke.
     [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 30, 0, 12, 0, false},
-    // Winking eye is half the height of the open one, per the brief.
-    [EXPR_WINK] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H / 2, 0, 0, EYE_R, false, SHAPE_BAR, EYE_H},
-    // Bigger and thinner-stroked than the default: at LINE_W the arms came out
-    // 17px long and 14px wide, which reads as a lumpy blob rather than a star.
-    // Spread out too, since a spiky shape needs more air than a bar.
-    [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
-    // Both eyes drawn identically rather than mirrored - the bowl sits under
-    // the left end of each lid. That asymmetry is the look.
-    // Both filled by the canvas and outlined by a thin stroke on top. The
-    // stroke's rounded joins are what keep the corners soft rather than
-    // stepped, and being thin it no longer swallows the detail that fattening
-    // it to close these shapes destroyed.
-    // Both are neutral's own outline, cut. Their boxes are neutral's size plus
-    // whatever the cut needs: the lid's tail, and nothing extra for angry.
-    // spread widens the pair slightly, since the tail eats into the gap.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED,  EYE_W + LID_TAIL, EYE_H, 0, 0, 0, false, SHAPE_SAME, 0, 9,
-                       8, 0, false, true},
-    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, SHAPE_SAME, 0, 9, 0, 0, false,
-                    true},
-    // Sized to match the others: at 56 the disc was visibly smaller than a
-    // neutral bar. Wider box means wider coil spacing, so the stroke goes up
-    // with it to hold the reference's 1:1 stroke-to-gap.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, SHAPE_SAME, 0, 10, 12},
-    // Defined but unmapped. One entry in layer_expr brings either back.
-    [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
-    [EXPR_SUSPICIOUS] = {SHAPE_BAR, EYE_W, 28, 13, 2, 14, false},
+    // Neutral's own outline, cut. Their boxes are neutral's size plus whatever
+    // the cut needs - the lid's tail, and nothing extra for angry. Unamused
+    // spreads slightly, since the tail eats into the gap between the eyes.
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H, 0, 0, 0, false, 9, 8, 0, true},
+    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true},
+    // Wider box means wider coil spacing, so the stroke goes up with it to
+    // hold the reference's 1:1 stroke-to-gap.
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 12},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
@@ -319,21 +270,15 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
     const int32_t top = (box_h - h) / 2; // keep the shape vertically centred as it closes
     lv_point_precise_t *p = widget->pts[eye];
 
-    if (shape == SHAPE_CHEVRON_UP) {
-        p[0] = (lv_point_precise_t){inset, top + h - inset};
-        p[1] = (lv_point_precise_t){w / 2, top + inset};
-        p[2] = (lv_point_precise_t){w - inset, top + h - inset};
-    } else {
-        // Left eye points right, right eye points left, so the pair squeezes
-        // inward at each other.
-        bool point_right = (eye == 0);
-        int32_t apex = point_right ? (w - inset) : inset;
-        int32_t open = point_right ? inset : (w - inset);
+    // Left eye points right, right eye points left, so the pair squeezes
+    // inward at each other.
+    bool point_right = (eye == 0);
+    int32_t apex = point_right ? (w - inset) : inset;
+    int32_t open = point_right ? inset : (w - inset);
 
-        p[0] = (lv_point_precise_t){open, top + inset};
-        p[1] = (lv_point_precise_t){apex, top + h / 2};
-        p[2] = (lv_point_precise_t){open, top + h - inset};
-    }
+    p[0] = (lv_point_precise_t){open, top + inset};
+    p[1] = (lv_point_precise_t){apex, top + h / 2};
+    p[2] = (lv_point_precise_t){open, top + h - inset};
 
     lv_line_set_points(widget->line[eye], p, 3);
 }
@@ -358,27 +303,6 @@ static void set_arc_points(struct zmk_widget_eyes_status *widget, int eye, int32
     lv_line_set_points(widget->line[eye], p, ARC_PTS);
 }
 
-// A switchback: the stroke runs the full width, folds back, and runs it again
-// slightly lower. Folding sideways rather than up and down is what makes it a
-// stack of overlapping near-horizontal strokes instead of a row of W's.
-static void set_zigzag_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
-                              int32_t box_h, int32_t inset) {
-    const int32_t h = scaled(box_h, widget->openness);
-    const int32_t top = (box_h - h) / 2;
-    const int32_t drop = h - 2 * inset;
-    lv_point_precise_t *p = widget->pts[eye];
-
-    for (int i = 0; i < ZIGZAG_PTS; i++) {
-        int32_t j = zigzag_jitter[(i + eye * 3) % ARRAY_SIZE(zigzag_jitter)];
-
-        // Right-hand points pull left, left-hand points push right: always
-        // inward, so nothing escapes the box.
-        p[i].x = (i % 2) ? (w - inset - j) : (inset + j);
-        p[i].y = top + inset + (drop * i) / (ZIGZAG_PTS - 1);
-    }
-
-    lv_line_set_points(widget->line[eye], p, ZIGZAG_PTS);
-}
 
 // Traces a rounded rectangle clockwise from its top-left corner. Neutral's
 // silhouette, which the derived expressions are cut out of.
@@ -524,26 +448,6 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
     lv_line_set_points(widget->line[eye], p, SPIRAL_PTS);
 }
 
-static void set_star_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h,
-                            int32_t inset) {
-    const int32_t cx = w / 2;
-    const int32_t cy = h / 2;
-    const int32_t outer = scaled(MIN(w, h) / 2 - inset, widget->openness);
-    const int32_t inner = (outer * STAR_INNER_PCT) / 100;
-    lv_point_precise_t *p = widget->pts[eye];
-
-    // Starts at -90 so a point faces up. A fat stroke over this path closes
-    // the middle in, which is what makes the star look solid.
-    for (int i = 0; i < STAR_PTS - 1; i++) {
-        int32_t deg = -90 + i * 36;
-        int32_t r = (i % 2 == 0) ? outer : inner;
-        p[i].x = cx + (r * cos_of(deg)) / TRIG_MAX;
-        p[i].y = cy + (r * sin_of(deg)) / TRIG_MAX;
-    }
-    p[STAR_PTS - 1] = p[0]; // close the loop
-
-    lv_line_set_points(widget->line[eye], p, STAR_PTS);
-}
 
 // Even-odd scanline fill of the polygon the outline traces. Deliberately not
 // anti-aliased: the same points are stroked on top with rounded joins, and
@@ -602,8 +506,8 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     const int32_t inset = lw / 2;
 
     for (int i = 0; i < 2; i++) {
-        enum eye_shape shape = (i == 1 && e->shape_r != SHAPE_SAME) ? e->shape_r : e->shape;
-        int32_t box_h = (i == 1 && e->h_r) ? e->h_r : e->h;
+        enum eye_shape shape = e->shape;
+        int32_t box_h = e->h;
         int16_t out = (int16_t)(EYE_DX + e->spread);
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
@@ -646,17 +550,6 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
             lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
-
-            // Written both ways round, not just when outlining, so the style
-            // can't persist onto the next expression that uses this bar.
-            if (e->outline) {
-                lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_TRANSP, LV_PART_MAIN);
-                lv_obj_set_style_border_width(widget->bar[i], lw, LV_PART_MAIN);
-                lv_obj_set_style_border_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
-            } else {
-                lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
-                lv_obj_set_style_border_width(widget->bar[i], 0, LV_PART_MAIN);
-            }
             lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
             lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
@@ -673,9 +566,6 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             set_arc_points(widget, i, e->w, box_h, inset);
             npts = ARC_PTS;
             break;
-        case SHAPE_ZIGZAG:
-            set_zigzag_points(widget, i, e->w, box_h, inset);
-            npts = ZIGZAG_PTS;
             break;
         case SHAPE_LIDDED:
             npts = set_lid_points(widget, i, e->w, box_h, inset);
@@ -687,9 +577,6 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             set_spiral_points(widget, i, e->w, box_h, inset);
             npts = SPIRAL_PTS;
             break;
-        case SHAPE_STAR:
-            set_star_points(widget, i, e->w, box_h, inset);
-            npts = STAR_PTS;
             break;
         default:
             set_chevron_points(widget, i, shape, e->w, box_h, widget->strain, inset);
@@ -895,11 +782,10 @@ static void blink_timer_cb(lv_timer_t *timer) {
     struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
     const struct expression *e = &expressions[widget->expr];
 
-    // Already-flat expressions have nothing left to close. Neither the spiral
-    // nor the star blinks: openness scales their radius, so a blink collapses
-    // and reinflates the whole shape, which reads as the animation restarting
-    // rather than as an eye closing.
-    bool blinks = (e->shape != SHAPE_SPIRAL && e->shape != SHAPE_STAR);
+    // The spiral doesn't blink: openness scales its radius, so a blink would
+    // collapse and reinflate the whole shape, reading as the animation
+    // restarting rather than as an eye closing.
+    bool blinks = (e->shape != SHAPE_SPIRAL);
 
     // Never blink mid-morph. The blink drives the same object and exec_cb, so
     // starting one would replace the morph's animation and discard the
