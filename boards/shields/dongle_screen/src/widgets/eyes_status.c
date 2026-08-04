@@ -138,20 +138,18 @@ enum eye_shape {
     SHAPE_STAR,
 };
 
-// One continuous stroke: right to left across the lid, then down and around
-// the bowl hanging beneath its left end. First point is the lid's right tip;
-// the rest sample the bowl.
-#define LID_PTS 8
-// Bowl width as a percentage of the lid's length.
-#define LID_BOWL_PCT 55
+// Points per corner when tracing a rounded rectangle. Both derived shapes
+// start from neutral's outline, so they share its silhouette by construction
+// rather than by eye.
+#define RR_CORNER_PTS 5
 
-// A straight slanted lid closed off by a curve bulging below it. Outer corner
-// high, inner corner low, mirrored between the eyes.
-#define ANGRY_PTS 9
-// How far below the outer corner the inner corner sits, and how far the curve
-// bulges below the chord between them - both as a percentage of usable height.
-#define ANGRY_SLANT_PCT 42
-#define ANGRY_BULGE_PCT 58
+// Angry is neutral sliced by a line running from high on the outer edge to low
+// on the inner one, keeping what falls below. Percentages of the eye's height.
+#define ANGRY_CUT_OUTER_PCT 42
+#define ANGRY_CUT_INNER_PCT 78
+
+// Unamused is neutral's lower half with a short tail off the top edge.
+#define LID_TAIL 14
 
 // Six points is five passes across the eye. More, thinner passes read as a
 // scribble; fewer, fatter ones read as a bar with notches.
@@ -165,16 +163,18 @@ static const uint8_t zigzag_jitter[] = {0, 3, 1, 4, 2, 5};
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
-#define ARC_PTS 5
+#define ARC_PTS 7
 
 // Canvas behind the outline, for shapes that need a solid interior. lv_line
 // only strokes, and widening the stroke until it closes a shape destroys the
-// detail that defined it. Sized to the largest filled shape with headroom.
-// Sized to the largest filled shape (62 x 40) plus a little margin, not
-// generously - each pixel here costs 3 bytes of RAM twice over, and this
-// dongle has very little to spare.
-#define EYE_FILL_W 64
-#define EYE_FILL_H 44
+// detail that defined it.
+//
+// Must cover the whole box of the largest filled shape, not just the part with
+// ink in it: the polygon is placed by centring its box in the canvas, so a box
+// taller than the canvas would be offset off the top. Unamused is the largest
+// at EYE_W + LID_TAIL by EYE_H. Each pixel costs 3 bytes, twice.
+#define EYE_FILL_W (EYE_W + LID_TAIL + 4)
+#define EYE_FILL_H (EYE_H + 4)
 // A scanline crosses at most this many edges. Nine-point shapes need far less.
 #define FILL_MAX_X 12
 
@@ -229,7 +229,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Box height sets the bow: depth is h minus the stroke, so 26 gives a 12px
     // dip across a 42px span. Shallow enough to read as settled rather than
     // as a frown.
-    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 26, 0, 14, 0, false},
+    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 30, 0, 12, 0, false},
     // Winking eye is half the height of the open one, per the brief.
     [EXPR_WINK] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H / 2, 0, 0, EYE_R, false, SHAPE_BAR, EYE_H},
     // Bigger and thinner-stroked than the default: at LINE_W the arms came out
@@ -242,12 +242,17 @@ static const struct expression expressions[EXPR_COUNT] = {
     // stroke's rounded joins are what keep the corners soft rather than
     // stepped, and being thin it no longer swallows the detail that fattening
     // it to close these shapes destroyed.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED, 62, 30, 0, 0, 0, false, SHAPE_SAME, 0, 6, 0, 0, false, true},
-    [EXPR_ANGRY] = {SHAPE_ANGRY, 62, 40, 0, 0, 0, false, SHAPE_SAME, 0, 6, 0, 0, false, true},
+    // Both are neutral's own outline, cut. Their boxes are neutral's size plus
+    // whatever the cut needs: the lid's tail, and nothing extra for angry.
+    // spread widens the pair slightly, since the tail eats into the gap.
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED,  EYE_W + LID_TAIL, EYE_H, 0, 0, 0, false, SHAPE_SAME, 0, 9,
+                       8, 0, false, true},
+    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, SHAPE_SAME, 0, 9, 0, 0, false,
+                    true},
     // Sized to match the others: at 56 the disc was visibly smaller than a
     // neutral bar. Wider box means wider coil spacing, so the stroke goes up
     // with it to hold the reference's 1:1 stroke-to-gap.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 9, 12},
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, SHAPE_SAME, 0, 10, 12},
     // Defined but unmapped. One entry in layer_expr brings either back.
     [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
     [EXPR_SUSPICIOUS] = {SHAPE_BAR, EYE_W, 28, 13, 2, 14, false},
@@ -375,76 +380,126 @@ static void set_zigzag_points(struct zmk_widget_eyes_status *widget, int eye, in
     lv_line_set_points(widget->line[eye], p, ZIGZAG_PTS);
 }
 
-// A flat lid with a bowl hanging under its left end, the lid running on past
-// the bowl to the right. Drawn as a single unbroken stroke, so the lid and the
-// bowl's rim are the same line rather than separate pieces that have to meet.
-static void set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
-                           int32_t box_h, int32_t inset) {
-    const int32_t h = scaled(box_h, widget->openness);
-    const int32_t top = (box_h - h) / 2 + inset;
-    const int32_t depth = h - 2 * inset;
-    const int32_t bowl = ((w - 2 * inset) * LID_BOWL_PCT) / 100;
-    const int32_t cx = inset + bowl / 2;
-    const int32_t rx = bowl / 2;
-    lv_point_precise_t *p = widget->pts[eye];
-
-    // Lid's far end. The stroke runs from here leftward, so this segment lays
-    // down the whole lid before the bowl starts.
-    p[0].x = w - inset;
-    p[0].y = top;
-
-    for (int i = 0; i < LID_PTS - 1; i++) {
-        int32_t deg = (180 * i) / (LID_PTS - 2);
-        p[i + 1].x = cx - (rx * cos_of(deg)) / TRIG_MAX;
-        p[i + 1].y = top + (depth * sin_of(deg)) / TRIG_MAX;
+// Traces a rounded rectangle clockwise from its top-left corner. Neutral's
+// silhouette, which the derived expressions are cut out of.
+static int rounded_rect(lv_point_precise_t *p, int32_t x0, int32_t y0, int32_t w, int32_t h,
+                        int32_t r) {
+    if (r > w / 2) {
+        r = w / 2;
+    }
+    if (r > h / 2) {
+        r = h / 2;
     }
 
-    lv_line_set_points(widget->line[eye], p, LID_PTS);
-}
+    const int32_t cx[4] = {x0 + r, x0 + w - r, x0 + w - r, x0 + r};
+    const int32_t cy[4] = {y0 + r, y0 + r, y0 + h - r, y0 + h - r};
+    const int32_t a0[4] = {180, 270, 0, 90};
+    int n = 0;
 
-// A closed crescent: a straight lid slanting down toward the nose, closed off
-// by a curve bulging below it. Mirrored between the eyes, so both inner
-// corners are the low ones.
-static void set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
-                             int32_t box_h, int32_t inset) {
-    const int32_t h = scaled(box_h, widget->openness);
-    const int32_t top = (box_h - h) / 2 + inset;
-    const int32_t usable = h - 2 * inset;
-
-    const int32_t x_out = inset;
-    const int32_t x_in = w - inset;
-    const int32_t y_out = top;
-    const int32_t y_in = top + (usable * ANGRY_SLANT_PCT) / 100;
-    const int32_t bulge = (usable * ANGRY_BULGE_PCT) / 100;
-
-    const int32_t arc_n = ANGRY_PTS - 3;
-    lv_point_precise_t *p = widget->pts[eye];
-
-    p[0].x = x_out;
-    p[0].y = y_out;
-    p[1].x = x_in;
-    p[1].y = y_in;
-
-    // Back from the inner corner to the outer one, dipping below the chord.
-    for (int i = 0; i < arc_n; i++) {
-        int32_t num = i + 1;
-        int32_t den = arc_n + 1;
-        int32_t deg = (180 * num) / den;
-
-        p[2 + i].x = x_in + ((x_out - x_in) * num) / den;
-        p[2 + i].y = y_in + ((y_out - y_in) * num) / den + (bulge * sin_of(deg)) / TRIG_MAX;
-    }
-
-    p[ANGRY_PTS - 1] = p[0]; // close the crescent
-
-    // The right eye is the mirror image, so its outer corner is on the right.
-    if (eye == 1) {
-        for (int i = 0; i < ANGRY_PTS; i++) {
-            p[i].x = w - p[i].x;
+    for (int k = 0; k < 4; k++) {
+        for (int i = 0; i < RR_CORNER_PTS; i++) {
+            int32_t deg = a0[k] + (90 * i) / (RR_CORNER_PTS - 1);
+            p[n].x = cx[k] + (r * cos_of(deg)) / TRIG_MAX;
+            p[n].y = cy[k] + (r * sin_of(deg)) / TRIG_MAX;
+            n++;
         }
     }
 
-    lv_line_set_points(widget->line[eye], p, ANGRY_PTS);
+    return n;
+}
+
+// Sutherland-Hodgman against a single half-plane: keeps whatever lies below
+// the line running from (x0, ya) to (x0 + w, yb).
+static int clip_below(lv_point_precise_t *dst, const lv_point_precise_t *src, int n, int32_t x0,
+                      int32_t w, int32_t ya, int32_t yb) {
+    int m = 0;
+
+    for (int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        int32_t xi = (int32_t)src[i].x, yi = (int32_t)src[i].y;
+        int32_t xj = (int32_t)src[j].x, yj = (int32_t)src[j].y;
+
+        int32_t di = yi - (ya + ((yb - ya) * (xi - x0)) / w);
+        int32_t dj = yj - (ya + ((yb - ya) * (xj - x0)) / w);
+
+        if (di >= 0) {
+            dst[m++] = src[i];
+        }
+
+        if ((di >= 0) != (dj >= 0)) {
+            int32_t den = di - dj;
+            if (den == 0) {
+                den = 1;
+            }
+            dst[m].x = xi + ((xj - xi) * di) / den;
+            dst[m].y = yi + ((yj - yi) * di) / den;
+            m++;
+        }
+    }
+
+    return m;
+}
+
+// Neutral's lower half, with a short tail running off the top edge. Built from
+// the same rounded rectangle so the curve matches neutral exactly rather than
+// approximating it.
+static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                          int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2;
+    const int32_t eye_w = w - LID_TAIL - 2 * inset;
+    const int32_t x0 = inset;
+
+    lv_point_precise_t rr[EYE_MAX_PTS];
+    lv_point_precise_t half[EYE_MAX_PTS];
+    lv_point_precise_t *p = widget->pts[eye];
+
+    // Full height, then cut in half, so the bowl is literally neutral's bottom.
+    int n = rounded_rect(rr, x0, top + inset - h, eye_w, 2 * (h - 2 * inset), EYE_R);
+    n = clip_below(half, rr, n, x0, eye_w, top + inset, top + inset);
+
+    // Tail first, so the stroke lays the top edge down before rounding the
+    // bowl. The closing segment back to it has no area, so the fill is the
+    // bowl alone.
+    p[0].x = x0 + eye_w + LID_TAIL;
+    p[0].y = top + inset;
+
+    for (int i = 0; i < n && i + 1 < EYE_MAX_PTS; i++) {
+        p[i + 1] = half[i];
+    }
+
+    int total = n + 1;
+    lv_line_set_points(widget->line[eye], p, total);
+    return total;
+}
+
+// Neutral, sliced by a line running from high on the outer edge to low on the
+// inner one, keeping what falls below. Being a cut of the same rounded
+// rectangle, the curve of the remaining bottom is neutral's own.
+static int set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                            int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2 + inset;
+    const int32_t eh = h - 2 * inset;
+    const int32_t x0 = inset;
+    const int32_t ew = w - 2 * inset;
+
+    lv_point_precise_t rr[EYE_MAX_PTS];
+    lv_point_precise_t *p = widget->pts[eye];
+
+    int n = rounded_rect(rr, x0, top, ew, eh, EYE_R);
+
+    // Outer edge is the left one on eye 0 and the right one on eye 1, so the
+    // cut simply runs the other way rather than mirroring the whole polygon.
+    int32_t cut_out = top + (eh * ANGRY_CUT_OUTER_PCT) / 100;
+    int32_t cut_in = top + (eh * ANGRY_CUT_INNER_PCT) / 100;
+    int32_t ya = eye ? cut_in : cut_out;
+    int32_t yb = eye ? cut_out : cut_in;
+
+    n = clip_below(p, rr, n, x0, ew, ya, yb);
+
+    lv_line_set_points(widget->line[eye], p, n);
+    return n;
 }
 
 static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h,
@@ -453,9 +508,10 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
     const int32_t cy = h / 2;
     const int32_t r_max = scaled(MIN(w, h) / 2 - inset, widget->openness);
     const int32_t last = SPIRAL_PTS - 1;
-    // Offset so the two eyes aren't rotating in lockstep, which looks
-    // mechanical. 137 is just a number that doesn't divide neatly into 360.
-    const int32_t phase = widget->spin + (eye ? 137 : 0);
+    // Both eyes share a phase: same starting orientation, same direction, same
+    // rate. Only the drift below is per-eye, so they read as a matched pair
+    // that happens to be unsteady rather than as two independent objects.
+    const int32_t phase = widget->spin;
     lv_point_precise_t *p = widget->pts[eye];
 
     for (int i = 0; i < SPIRAL_PTS; i++) {
@@ -622,12 +678,10 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             npts = ZIGZAG_PTS;
             break;
         case SHAPE_LIDDED:
-            set_lid_points(widget, i, e->w, box_h, inset);
-            npts = LID_PTS;
+            npts = set_lid_points(widget, i, e->w, box_h, inset);
             break;
         case SHAPE_ANGRY:
-            set_angry_points(widget, i, e->w, box_h, inset);
-            npts = ANGRY_PTS;
+            npts = set_angry_points(widget, i, e->w, box_h, inset);
             break;
         case SHAPE_SPIRAL:
             set_spiral_points(widget, i, e->w, box_h, inset);
