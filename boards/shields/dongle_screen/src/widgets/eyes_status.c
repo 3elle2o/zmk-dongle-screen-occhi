@@ -118,8 +118,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // into a solid disc; at 6px over 1.5 turns it went wispy. Two turns over a
 // 25px radius puts the coils 12.5px apart, so a 6px stroke leaves 6.5px of
 // gap - very close to the reference's 1:1.
-#define SPIRAL_PTS 28
-#define SPIRAL_TURNS 720 // degrees swept from centre to rim
+// 2.5 turns rather than 2, with the stroke thinned to match: more turns over
+// the same radius packs the coils closer, so holding the reference's roughly
+// 1:1 stroke-to-gap means giving up some stroke width for them. 34 points
+// because the extra half turn would otherwise stretch each segment.
+#define SPIRAL_PTS 34
+#define SPIRAL_TURNS 900 // degrees swept from centre to rim
 // 1.5s whipped the free outer end round like a fan blade; 3.5s was sedate.
 #define SPIN_MS 2400
 
@@ -291,7 +295,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Deliberately excluded from the widening. EYE_DX + 6 puts these 52px from
     // centre, exactly where they sat before it - at 86px per eye they were
     // already far enough apart, and any wider reaches the case lip.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 6},
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 8, 6},
 
     // Transient variations on the resting face, swapped in by the quirk timer.
     // Width, height and radius scale by the same factor, so these are neutral
