@@ -145,6 +145,7 @@ enum eye_shape {
     SHAPE_ARC_DOWN,
     SHAPE_LIDDED,
     SHAPE_ANGRY,
+    SHAPE_CROPPED,
     SHAPE_SPIRAL,
 };
 
@@ -160,6 +161,25 @@ enum eye_shape {
 
 // Unamused is neutral's lower half with a short tail off the top edge.
 #define LID_TAIL 14
+
+// How much of neutral the downward-looking variation cuts off the top. Subtle
+// on purpose - just enough to flatten the top edge and read as a lowered lid.
+// A flat edge is the point, and a rounded bar can't produce one, hence the clip.
+#define CROP_TOP_PCT 14
+
+// Rare transient variations on the resting face: a quirk timer swaps one in
+// for a couple of seconds, then back. Scale factors are applied to width,
+// height and radius alike so the silhouette stays neutral's, just resized.
+#define QUIRK_MIN_MS 20000
+#define QUIRK_MAX_MS 70000
+#define QUIRK_HOLD_MS 2200
+#define QUIRK_UP_PCT 116
+#define QUIRK_SMALL_PCT 62
+
+// Highlight punched out of the eye, offset up and outward from its centre.
+#define SPARK_D 16
+#define SPARK_DX 11
+#define SPARK_DY 19
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
@@ -194,6 +214,11 @@ enum expr_id {
     EXPR_CONFUSED,
     EXPR_UNAMUSED,
     EXPR_ANGRY,
+    // Transient variations on neutral, chosen at random by the quirk timer.
+    EXPR_NEUTRAL_UP,
+    EXPR_NEUTRAL_DOWN,
+    EXPR_NEUTRAL_SMALL,
+    EXPR_NEUTRAL_TWINKLE,
     EXPR_COUNT,
 };
 
@@ -211,6 +236,7 @@ struct expression {
     bool filled;      // line shapes only: fill the traced path solid
     int16_t morph_ms; // total time to blink into this expression; 0 = default
     bool no_blink;    // never blink in this expression
+    bool twinkle;     // punch a black highlight out of each eye
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -241,6 +267,19 @@ static const struct expression expressions[EXPR_COUNT] = {
     // centre, exactly where they sat before it - at 86px per eye they were
     // already far enough apart, and any wider reaches the case lip.
     [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 6},
+
+    // Transient variations on the resting face, swapped in by the quirk timer.
+    // Width, height and radius scale by the same factor, so these are neutral
+    // resized rather than new shapes; the cropped one is neutral's own outline
+    // with a flat slice off the top, so its curve is neutral's exactly.
+    [EXPR_NEUTRAL_UP] = {SHAPE_BAR, EYE_W * QUIRK_UP_PCT / 100, EYE_H * QUIRK_UP_PCT / 100, 0, -7,
+                         EYE_R * QUIRK_UP_PCT / 100, false},
+    [EXPR_NEUTRAL_DOWN] = {SHAPE_CROPPED, EYE_W, EYE_H, 0, 7, 0, false, 9, 0, 0, true},
+    [EXPR_NEUTRAL_SMALL] = {SHAPE_BAR, EYE_W * QUIRK_SMALL_PCT / 100,
+                            EYE_H * QUIRK_SMALL_PCT / 100, 0, 0, EYE_R * QUIRK_SMALL_PCT / 100,
+                            false},
+    [EXPR_NEUTRAL_TWINKLE] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, false, 0, 0, 0, false, 0,
+                              false, true},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
@@ -449,6 +488,32 @@ static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_
 // Neutral, sliced by a line running from high on the outer edge to low on the
 // inner one, keeping what falls below. Being a cut of the same rounded
 // rectangle, the curve of the remaining bottom is neutral's own.
+// Neutral with a flat slice off the top. Same rounded rectangle and the same
+// clip as angry, only the cut is level rather than slanted, so the bottom is
+// neutral's own curve untouched.
+static int set_cropped_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                              int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2 + inset;
+    const int32_t eh = h - 2 * inset;
+    const int32_t x0 = inset;
+    const int32_t ew = w - 2 * inset;
+    const int32_t cut = top + (eh * CROP_TOP_PCT) / 100;
+
+    lv_point_precise_t rr[EYE_MAX_PTS];
+    lv_point_precise_t *p = widget->pts[eye];
+
+    int n = rounded_rect(rr, x0, top, ew, eh, EYE_R);
+    n = clip_below(p, rr, n, x0, ew, cut, cut);
+
+    if (n < EYE_MAX_PTS) {
+        p[n++] = p[0];
+    }
+
+    lv_line_set_points(widget->line[eye], p, n);
+    return n;
+}
+
 static int set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
                             int32_t box_h, int32_t inset) {
     const int32_t h = scaled(box_h, widget->openness);
@@ -609,10 +674,22 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
             lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
+
+            // Offset scales with openness so it stays inside the eye while
+            // the eye is closing rather than floating free of it.
+            if (e->twinkle) {
+                lv_obj_remove_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_align(widget->spark[i], LV_ALIGN_CENTER, dx + (i ? SPARK_DX : -SPARK_DX),
+                             dy - (int16_t)scaled(SPARK_DY, widget->openness));
+                lv_obj_move_foreground(widget->spark[i]);
+            } else {
+                lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
+            }
             continue;
         }
 
         lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
         int npts;
@@ -628,6 +705,9 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             break;
         case SHAPE_ANGRY:
             npts = set_angry_points(widget, i, e->w, box_h, inset);
+            break;
+        case SHAPE_CROPPED:
+            npts = set_cropped_points(widget, i, e->w, box_h, inset);
             break;
         case SHAPE_SPIRAL:
             set_spiral_points(widget, i, e->w, box_h, inset);
@@ -865,6 +945,18 @@ static void blink_timer_cb(lv_timer_t *timer) {
     lv_timer_set_period(timer, rnd_range(BLINK_MIN_MS, BLINK_MAX_MS));
 }
 
+// Which variation is currently standing in for the resting face, if any.
+// resolve() only lets it through when the face would otherwise be neutral, so
+// a layer or a burst of typing takes precedence and it simply lapses.
+static enum expr_id quirk = EXPR_NONE;
+
+static const enum expr_id quirks[] = {
+    EXPR_NEUTRAL_UP,
+    EXPR_NEUTRAL_DOWN,
+    EXPR_NEUTRAL_SMALL,
+    EXPR_NEUTRAL_TWINKLE,
+};
+
 static void squint_timer_cb(lv_timer_t *timer) {
     struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
 
@@ -958,7 +1050,9 @@ static enum expr_id resolve(struct eyes_state state) {
     case 1:
         return EXPR_SQUEEZED;
     default:
-        return EXPR_NEUTRAL;
+        // A quirk only stands in for the resting face; anything with something
+        // to report has already returned above.
+        return quirk != EXPR_NONE ? quirk : EXPR_NEUTRAL;
     }
 }
 
@@ -977,6 +1071,22 @@ static struct eyes_state eyes_get_state(const zmk_event_t *eh) {
         .wpm = zmk_wpm_get_state(),
         .idle = (zmk_activity_get_state() != ZMK_ACTIVITY_ACTIVE),
     };
+}
+
+// One timer alternating between "pick one" and "put it back", rescheduling
+// itself to the hold time or to the next long gap accordingly.
+static void quirk_timer_cb(lv_timer_t *timer) {
+    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+
+    if (quirk != EXPR_NONE) {
+        quirk = EXPR_NONE;
+        lv_timer_set_period(timer, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS));
+    } else {
+        quirk = quirks[rnd() % ARRAY_SIZE(quirks)];
+        lv_timer_set_period(timer, QUIRK_HOLD_MS);
+    }
+
+    set_expression(widget, resolve(eyes_get_state(NULL)));
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(widget_eyes_status, struct eyes_state, eyes_update_cb, eyes_get_state)
@@ -1059,6 +1169,18 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    // Created after the eyes so they draw on top of them.
+    for (int i = 0; i < 2; i++) {
+        widget->spark[i] = lv_obj_create(widget->obj);
+        lv_obj_remove_style_all(widget->spark[i]);
+        lv_obj_set_size(widget->spark[i], SPARK_D, SPARK_D);
+        lv_obj_set_style_bg_color(widget->spark[i], lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(widget->spark[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(widget->spark[i], LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_remove_flag(widget->spark[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
+    }
+
     init_zzz(widget);
 
     widget->expr = EXPR_NEUTRAL;
@@ -1082,6 +1204,10 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     lv_timer_t *squint =
         lv_timer_create(squint_timer_cb, rnd_range(SQUINT_MIN_MS, SQUINT_MAX_MS), widget);
     lv_timer_set_repeat_count(squint, -1);
+
+    lv_timer_t *quirk_t =
+        lv_timer_create(quirk_timer_cb, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS), widget);
+    lv_timer_set_repeat_count(quirk_t, -1);
 
     zzz_timer = lv_timer_create(zzz_timer_cb, ZZZ_DELAY_MS, widget);
     lv_timer_set_repeat_count(zzz_timer, 1);
