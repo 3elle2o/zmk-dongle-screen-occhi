@@ -198,6 +198,7 @@ struct expression {
     int16_t rot;      // tilt in 0.1 degrees, mirrored between the eyes
     bool filled;      // line shapes only: fill the traced path solid
     int16_t morph_ms; // total time to blink into this expression; 0 = default
+    bool no_blink;    // never blink in this expression
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -206,8 +207,10 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_NEUTRAL] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, true},
     [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, 0, false},
     [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 0, 12, false},
-    // Box height sets the bow: depth is h minus the stroke.
-    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 30, 0, 12, 0, false},
+    // Box height sets the bow: depth is h minus the stroke. Doesn't blink -
+    // these eyes are already shut, so collapsing and reopening the arc reads
+    // as a glitch rather than as a blink.
+    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 30, 0, 12, 0, false, 0, 0, 0, false, 0, true},
     // Neutral's own outline, cut. Their boxes are neutral's size plus whatever
     // the cut needs - the lid's tail, and nothing extra for angry. Unamused
     // spreads slightly, since the tail eats into the gap between the eyes.
@@ -828,10 +831,10 @@ static void blink_timer_cb(lv_timer_t *timer) {
     struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
     const struct expression *e = &expressions[widget->expr];
 
-    // The spiral doesn't blink: openness scales its radius, so a blink would
-    // collapse and reinflate the whole shape, reading as the animation
-    // restarting rather than as an eye closing.
-    bool blinks = (e->shape != SHAPE_SPIRAL);
+    // The spiral is excluded by shape rather than by flag because openness
+    // scales its radius: a blink would collapse and reinflate the whole thing,
+    // reading as the animation restarting rather than as an eye closing.
+    bool blinks = !e->no_blink && e->shape != SHAPE_SPIRAL;
 
     // Never blink mid-morph. The blink drives the same object and exec_cb, so
     // starting one would replace the morph's animation and discard the
