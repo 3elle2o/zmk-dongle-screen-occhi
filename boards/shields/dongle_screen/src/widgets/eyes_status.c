@@ -148,7 +148,7 @@ enum expr_id {
     EXPR_CONFUSED,
     EXPR_WINK,
     EXPR_STARS,
-    EXPR_ANGRY,
+    EXPR_FRUSTRATED,
     EXPR_COUNT,
 };
 
@@ -183,9 +183,10 @@ static const struct expression expressions[EXPR_COUNT] = {
     // 17px long and 14px wide, which reads as a lumpy blob rather than a star.
     // Spread out too, since a spiky shape needs more air than a bar.
     [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
-    // Bars tilted toward each other. The tilt is mirrored, so this is the
-    // magnitude and the left eye takes it positive.
-    [EXPR_ANGRY] = {SHAPE_BAR, EYE_W, 34, 0, 0, 17, false, SHAPE_SAME, 0, 0, 0, 180},
+    // Flat, long and steeply tilted, inner ends dropping toward each other.
+    // The first attempt was 56x34 with a full-capsule radius, which came out
+    // as a fat lozenge; the reference is much closer to a thick stroke.
+    [EXPR_FRUSTRATED] = {SHAPE_BAR, 62, 16, 0, 0, 8, false, SHAPE_SAME, 0, 0, 0, 220},
     // Sized to match the others: at 56 the disc was visibly smaller than a
     // neutral bar. Wider box means wider coil spacing, so the stroke goes up
     // with it to hold the reference's 1:1 stroke-to-gap.
@@ -198,7 +199,7 @@ static const struct expression expressions[EXPR_COUNT] = {
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
 static const enum expr_id layer_expr[] = {
-    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_ANGRY,
+    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_FRUSTRATED,
     [3] = EXPR_DEADPAN, [4] = EXPR_SHOCK,
 };
 
@@ -350,6 +351,13 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
+        // Written unconditionally, not just on the branch that uses it. Setting
+        // it only inside the bar branch left a stale tilt on a hidden bar,
+        // which reappeared the next time that bar was shown by an expression
+        // that never asked to be rotated. Mirrored, so the pair tilts toward
+        // each other rather than both leaning the same way.
+        lv_obj_set_style_transform_rotation(widget->bar[i], i ? -e->rot : e->rot, LV_PART_MAIN);
+
         // Same offset for both eyes, deliberately: this one shudders as a
         // pair rather than each eye going its own way.
         if (shape == SHAPE_CHEVRON_IN) {
@@ -376,15 +384,8 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
             lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
-
-            // Mirrored, so the pair tilts toward each other rather than both
-            // leaning the same way. Pivot has to be moved off the default
-            // top-left corner or the bar swings instead of tilting.
             lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
             lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
-            lv_obj_set_style_transform_rotation(widget->bar[i], i ? -e->rot : e->rot,
-                                                LV_PART_MAIN);
-
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
             continue;
         }
@@ -551,7 +552,19 @@ static void morph_open(lv_anim_t *a) {
 }
 
 static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id id) {
-    if (widget->pending_expr == id && widget->expr == id) {
+    // A morph adopts its new expression in the animation's completion callback.
+    // Anything that replaces that animation before it finishes - another morph,
+    // or a blink landing on the same object and exec_cb - drops the callback,
+    // and the widget is left rendering the old expression forever. Adopt any
+    // orphaned pending expression here so a stuck state always clears on the
+    // next change rather than persisting.
+    if (widget->expr != widget->pending_expr) {
+        widget->expr = widget->pending_expr;
+        set_idle_motion(widget);
+    }
+
+    if (widget->expr == id) {
+        widget->pending_expr = id;
         return;
     }
 
@@ -583,7 +596,12 @@ static void blink_timer_cb(lv_timer_t *timer) {
     // rather than as an eye closing.
     bool blinks = (e->shape != SHAPE_SPIRAL && e->shape != SHAPE_STAR);
 
-    if (blinks && e->h > 24 && widget->openness == OPEN_FULL) {
+    // Never blink mid-morph. The blink drives the same object and exec_cb, so
+    // starting one would replace the morph's animation and discard the
+    // completion callback that adopts the new expression.
+    bool morphing = (widget->expr != widget->pending_expr);
+
+    if (blinks && !morphing && e->h > 24 && widget->openness == OPEN_FULL) {
         animate(widget, openness_anim_cb, OPEN_FULL, OPEN_SHUT, BLINK_CLOSE_MS, 0,
                 lv_anim_path_ease_in, NULL);
         animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, BLINK_OPEN_MS, BLINK_CLOSE_MS,
