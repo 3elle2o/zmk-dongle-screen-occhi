@@ -117,7 +117,7 @@ int zmk_widget_output_status_init(struct zmk_widget_output_status *widget, lv_ob
     lv_obj_set_size(widget->obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
     widget->transport_label = lv_label_create(widget->obj);
-    lv_obj_set_style_text_font(widget->transport_label, &Fredoka_Regular_20, 0);
+    lv_obj_set_style_text_font(widget->transport_label, &Fredoka_SemiBold_20, 0);
     lv_obj_align(widget->transport_label, LV_ALIGN_CENTER, 0, 0);
 
     widget->ble_label = lv_label_create(widget->obj);

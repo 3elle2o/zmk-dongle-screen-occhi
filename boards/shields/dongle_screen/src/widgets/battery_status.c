@@ -309,7 +309,7 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
                              LV_COLOR_FORMAT_RGB565);
 
         // Number then bar, both on the same line, one cell per half.
-        lv_obj_set_style_text_font(battery_label, &Fredoka_Regular_20, 0);
+        lv_obj_set_style_text_font(battery_label, &Fredoka_SemiBold_20, 0);
         lv_obj_set_width(battery_label, BAT_LABEL_W);
         lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_RIGHT, 0);
         lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, i * BAT_PITCH, 0);

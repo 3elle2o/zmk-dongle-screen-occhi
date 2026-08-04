@@ -27,6 +27,7 @@ struct zmk_widget_eyes_status {
     int16_t strain;   // 0-256, how hard a squeeze is currently pushing
     int16_t spin;     // 0-359, rotation of the confused spiral
     int16_t shake;    // horizontal shudder, applied to both eyes together
+    int16_t wob;      // 0-359, slow drift phase for the confused spirals
     int16_t gaze_x;
     int16_t gaze_y;
     bool idle;

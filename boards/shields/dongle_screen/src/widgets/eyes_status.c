@@ -72,8 +72,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // well below where it triggers.
 #define WPM_SQUEEZE_ON 40
 #define WPM_SQUEEZE_OFF 33
-#define WPM_CONFUSED_ON 60
-#define WPM_CONFUSED_OFF 52
+#define WPM_CONFUSED_ON 70
+#define WPM_CONFUSED_OFF 62
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL.
@@ -100,7 +100,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define SPIRAL_TURNS 720 // degrees swept from centre to rim
 // Slow. At 1.5s the free outer end whips round and reads as a fan blade.
 #define SPIN_MS 3500
-#define WOBBLE_PX 3
+
+// The drift has its own slow driver rather than being derived from `spin`.
+// Dividing spin down would have snapped every time it wrapped 359 -> 0, since
+// half of a wrap is a 180 degree jump.
+#define WOBBLE_MS 7000
+#define WOBBLE_PX 2
 
 // 5 outer points alternating with 5 inner, plus a repeat of the first to close
 // the loop so the stroke joins cleanly.
@@ -184,7 +189,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Sized to match the others: at 56 the disc was visibly smaller than a
     // neutral bar. Wider box means wider coil spacing, so the stroke goes up
     // with it to hold the reference's 1:1 stroke-to-gap.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 9, 0},
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 9, 12},
     // Defined but unmapped. One entry in layer_expr brings either back.
     [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
     [EXPR_SUSPICIOUS] = {SHAPE_BAR, EYE_W, 28, 13, 2, 14, false},
@@ -351,12 +356,13 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             dx += widget->shake;
         }
 
-        // Each spiral drifts on its own, at a different rate to the other, so
-        // the pair looks unsteady rather than like one rigid assembly.
+        // Each spiral drifts on its own slow circle, a third of a turn out of
+        // phase with the other, so the pair looks unsteady without either one
+        // appearing to twitch.
         if (shape == SHAPE_SPIRAL) {
-            int32_t rate = i ? 3 : 2;
-            dx += (int16_t)((cos_of(widget->spin * rate + i * 90) * WOBBLE_PX) / TRIG_MAX);
-            dy += (int16_t)((sin_of(widget->spin * rate) * WOBBLE_PX) / TRIG_MAX);
+            int32_t phase = widget->wob + (i ? 120 : 0);
+            dx += (int16_t)((cos_of(phase) * WOBBLE_PX) / TRIG_MAX);
+            dy += (int16_t)((sin_of(phase) * WOBBLE_PX) / TRIG_MAX);
         }
 
         if (shape == SHAPE_BAR) {
@@ -427,6 +433,12 @@ static void spin_anim_cb(void *var, int32_t v) {
     apply_geometry(widget);
 }
 
+static void wob_anim_cb(void *var, int32_t v) {
+    struct zmk_widget_eyes_status *widget = var;
+    widget->wob = (int16_t)v;
+    apply_geometry(widget);
+}
+
 static void shake_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     int32_t off = 0;
@@ -487,15 +499,18 @@ static void set_idle_motion(struct zmk_widget_eyes_status *widget) {
     lv_anim_delete(widget, strain_anim_cb);
     lv_anim_delete(widget, spin_anim_cb);
     lv_anim_delete(widget, shake_anim_cb);
+    lv_anim_delete(widget, wob_anim_cb);
     widget->strain = OPEN_FULL;
     widget->spin = 0;
     widget->shake = 0;
+    widget->wob = 0;
 
     if (widget->expr == EXPR_SQUEEZED) {
         loop_anim(widget, strain_anim_cb, OPEN_FULL, 0, STRAIN_MS, true);
         loop_anim(widget, shake_anim_cb, 0, SHAKE_PERIOD, SHAKE_PERIOD_MS, false);
     } else if (widget->expr == EXPR_CONFUSED) {
         loop_anim(widget, spin_anim_cb, 0, 359, SPIN_MS, false);
+        loop_anim(widget, wob_anim_cb, 0, 359, WOBBLE_MS, false);
     }
 }
 
@@ -683,7 +698,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
     for (int i = 0; i < 3; i++) {
         widget->zzz[i] = lv_label_create(widget->obj);
         lv_label_set_text(widget->zzz[i], "z");
-        lv_obj_set_style_text_font(widget->zzz[i], &Fredoka_Regular_20, LV_PART_MAIN);
+        lv_obj_set_style_text_font(widget->zzz[i], &Fredoka_SemiBold_20, LV_PART_MAIN);
         lv_obj_set_style_text_color(widget->zzz[i], lv_color_white(), LV_PART_MAIN);
         lv_obj_align(widget->zzz[i], LV_ALIGN_CENTER, zx[i], zy[i]);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);

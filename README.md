@@ -315,7 +315,7 @@ MIT. Fredoka carries no Reserved Font Name, so this converted copy may keep the 
 If you redistribute this module, `Fredoka-OFL.txt` must travel with the font. That is the OFL's
 one substantive condition.
 
-The font was generated from the upstream variable font by instancing `wght=400 wdth=100` with
+The font was generated from the upstream variable font by instancing `wght=600 wdth=100` with
 `fontTools`, then converting with `lv_font_conv` at 20px / 4bpp, subset to digits, `A-Z`, space,
 `%` and lowercase `z`. Regenerate rather than hand-editing it.
 
