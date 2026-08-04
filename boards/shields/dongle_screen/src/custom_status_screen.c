@@ -61,7 +61,7 @@ lv_obj_t *zmk_display_status_screen()
     // Shares the bottom row with the batteries, sitting at its right-hand end,
     // which frees the whole top of the screen for the eyes. Pulled in from the
     // right so the case lip doesn't clip the profile number.
-    lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_BOTTOM_MID, 62, 0);
+    lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_BOTTOM_MID, 74, -2);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE
@@ -85,7 +85,7 @@ lv_obj_t *zmk_display_status_screen()
     // panel, which is mounted off-centre with a lip covering the right edge.
     // Set by eye against the actual case - a calculated 2mm (17px) overshot.
     // y: centred on the space above the battery row, not on the screen.
-    lv_obj_align(zmk_widget_eyes_status_obj(&eyes_status_widget), LV_ALIGN_CENTER, 10, -10);
+    lv_obj_align(zmk_widget_eyes_status_obj(&eyes_status_widget), LV_ALIGN_CENTER, 8, -10);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE
