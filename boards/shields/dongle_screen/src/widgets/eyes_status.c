@@ -121,9 +121,14 @@ enum eye_shape {
     SHAPE_BAR,
     SHAPE_CHEVRON_UP,
     SHAPE_CHEVRON_IN,
+    SHAPE_ARC_DOWN,
     SHAPE_SPIRAL,
     SHAPE_STAR,
 };
+
+// Points along a shallow curve. A 3-point chevron would read as a hard V;
+// sampling a sine gives it an actual bow.
+#define ARC_PTS 5
 
 enum expr_id {
     EXPR_NEUTRAL = 0,
@@ -162,7 +167,10 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_WIDE] = {SHAPE_BAR, 68, 100, 0, 0, 30, true},
     [EXPR_DEADPAN] = {SHAPE_BAR, 60, 14, 0, 0, 7, false},
     [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 0, 12, false},
-    [EXPR_SLEEPY] = {SHAPE_BAR, EYE_W, 22, 0, 16, 11, false},
+    // Box height sets the bow: depth is h minus the stroke, so 26 gives a 12px
+    // dip across a 42px span. Shallow enough to read as settled rather than
+    // as a frown.
+    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 26, 0, 14, 0, false},
     // Winking eye is half the height of the open one, per the brief.
     [EXPR_WINK] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H / 2, 0, 0, EYE_R, false, SHAPE_BAR, EYE_H},
     // Bigger and thinner-stroked than the default: at LINE_W the arms came out
@@ -256,6 +264,26 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
     }
 
     lv_line_set_points(widget->line[eye], p, 3);
+}
+
+// Bows downward: ends high, middle low. Reads as eyes closed and settled,
+// where a flat bar reads as merely narrowed.
+static void set_arc_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                           int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2;
+    const int32_t span = w - 2 * inset;
+    const int32_t depth = h - 2 * inset;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    for (int i = 0; i < ARC_PTS; i++) {
+        // sin across 0..180 degrees: zero at both ends, deepest in the middle.
+        int32_t deg = (180 * i) / (ARC_PTS - 1);
+        p[i].x = inset + (span * i) / (ARC_PTS - 1);
+        p[i].y = top + inset + (depth * sin_of(deg)) / TRIG_MAX;
+    }
+
+    lv_line_set_points(widget->line[eye], p, ARC_PTS);
 }
 
 static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h,
@@ -358,6 +386,9 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
         switch (shape) {
+        case SHAPE_ARC_DOWN:
+            set_arc_points(widget, i, e->w, box_h, inset);
+            break;
         case SHAPE_SPIRAL:
             set_spiral_points(widget, i, e->w, box_h, inset);
             break;
