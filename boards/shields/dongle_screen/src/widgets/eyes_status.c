@@ -68,6 +68,18 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define MORPH_CLOSE_MS 80
 #define MORPH_OPEN_MS 120
 
+// Occasionally the resting face narrows, as though focusing on something far
+// off, then opens again. Rare on purpose - it's a piece of character, not a
+// tic. One animation with a playback delay does the whole thing: narrow, hold,
+// widen. Two separate animations would fight, since LVGL replaces an existing
+// one targeting the same object and callback.
+#define SQUINT_MIN_MS 30000
+#define SQUINT_MAX_MS 90000
+#define SQUINT_TO 148 // openness held while narrowed, out of OPEN_FULL
+#define SQUINT_IN_MS 240
+#define SQUINT_HOLD_MS 1500
+#define SQUINT_OUT_MS 320
+
 // A saccade is a snap, not a drift: slow interpolation reads as the eyes
 // sliding around the panel rather than looking at something.
 #define SACCADE_MS 120
@@ -853,6 +865,30 @@ static void blink_timer_cb(lv_timer_t *timer) {
     lv_timer_set_period(timer, rnd_range(BLINK_MIN_MS, BLINK_MAX_MS));
 }
 
+static void squint_timer_cb(lv_timer_t *timer) {
+    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+
+    // Only the resting face, and only when it's settled. Requiring full
+    // openness is what keeps this from colliding with a blink or a morph -
+    // both drive the same value, and neither leaves it at OPEN_FULL while
+    // running.
+    if (widget->expr == EXPR_NEUTRAL && widget->expr == widget->pending_expr &&
+        widget->openness == OPEN_FULL) {
+        lv_anim_t a;
+        lv_anim_init(&a);
+        lv_anim_set_var(&a, widget);
+        lv_anim_set_exec_cb(&a, openness_anim_cb);
+        lv_anim_set_values(&a, OPEN_FULL, SQUINT_TO);
+        lv_anim_set_time(&a, SQUINT_IN_MS);
+        lv_anim_set_playback_time(&a, SQUINT_OUT_MS);
+        lv_anim_set_playback_delay(&a, SQUINT_HOLD_MS);
+        lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+        lv_anim_start(&a);
+    }
+
+    lv_timer_set_period(timer, rnd_range(SQUINT_MIN_MS, SQUINT_MAX_MS));
+}
+
 static void glance_timer_cb(lv_timer_t *timer) {
     struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
     const struct expression *e = &expressions[widget->expr];
@@ -1042,6 +1078,10 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     lv_timer_t *glance =
         lv_timer_create(glance_timer_cb, rnd_range(GLANCE_MIN_MS, GLANCE_MAX_MS), widget);
     lv_timer_set_repeat_count(glance, -1);
+
+    lv_timer_t *squint =
+        lv_timer_create(squint_timer_cb, rnd_range(SQUINT_MIN_MS, SQUINT_MAX_MS), widget);
+    lv_timer_set_repeat_count(squint, -1);
 
     zzz_timer = lv_timer_create(zzz_timer_cb, ZZZ_DELAY_MS, widget);
     lv_timer_set_repeat_count(zzz_timer, 1);
