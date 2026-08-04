@@ -32,16 +32,24 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
 // The percentage sits beside the bar rather than on a row above it, so the
 // whole indicator is one line tall instead of two.
-#define BAT_BAR_W 48
-#define BAT_BAR_H 5
+// The number is the real indicator; the bar is a glanceable hint beside it, so
+// it gives up width first when the row is tight.
+#define BAT_BAR_W 28
+#define BAT_BAR_H 10
+// Chamfer at each corner. At 5px tall a single knocked-out pixel was enough to
+// suggest a rounded end; at 10 it needs a few.
+#define BAT_BAR_CORNER 3
 // Wide enough for "100". Fredoka's digits are wider than Montserrat's, and at
 // 28 a full charge would have been clipped by the label's own box - the same
 // trap that caught the connection indicator.
 #define BAT_LABEL_W 36
 // Both cells sit left of centre so the connection indicator has the right-hand
-// end of this row to itself. Tightened so that end can move inward, clear of
-// the lip on the case's right edge.
-#define BAT_PITCH 76
+// end of this row to itself.
+//
+// Pitch must exceed a cell's own width (BAT_LABEL_W + 4 + BAT_BAR_W = 68) or
+// the cells overlap - which they silently did at 76 against an 80px cell,
+// showing up as the two readouts touching. 92 leaves 24px between them.
+#define BAT_PITCH 92
 
 struct battery_state
 {
@@ -111,11 +119,19 @@ static void draw_battery(lv_obj_t *canvas, uint8_t level, bool usb_present)
         lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
     }
 
-    // Knock out the four corners so the bar reads as rounded at this size.
-    lv_canvas_set_px(canvas, 0, 0, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_set_px(canvas, 0, BAT_BAR_H - 1, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_set_px(canvas, BAT_BAR_W - 1, 0, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_set_px(canvas, BAT_BAR_W - 1, BAT_BAR_H - 1, lv_color_black(), LV_OPA_COVER);
+    // Chamfer all four corners so the bar reads as rounded rather than as a
+    // hard rectangle.
+    for (int i = 0; i < BAT_BAR_CORNER; i++)
+    {
+        for (int j = 0; j < BAT_BAR_CORNER - i; j++)
+        {
+            lv_canvas_set_px(canvas, i, j, lv_color_black(), LV_OPA_COVER);
+            lv_canvas_set_px(canvas, BAT_BAR_W - 1 - i, j, lv_color_black(), LV_OPA_COVER);
+            lv_canvas_set_px(canvas, i, BAT_BAR_H - 1 - j, lv_color_black(), LV_OPA_COVER);
+            lv_canvas_set_px(canvas, BAT_BAR_W - 1 - i, BAT_BAR_H - 1 - j, lv_color_black(),
+                             LV_OPA_COVER);
+        }
+    }
 
     if (level <= 99 && level > 0)
     {
