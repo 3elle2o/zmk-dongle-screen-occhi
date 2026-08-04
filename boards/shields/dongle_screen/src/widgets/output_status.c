@@ -19,6 +19,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/endpoints.h>
 
 #include "output_status.h"
+#include <fonts.h>
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
@@ -55,10 +56,8 @@ static void set_status_symbol(struct zmk_widget_output_status *widget, struct ou
     case ZMK_TRANSPORT_USB:
         // Red when the dongle has power but the host isn't talking to it,
         // e.g. plugged into a charger rather than a computer.
-        // LVGL's built-in symbols are used rather than the bundled Nerd Font,
-        // whose subset has a Bluetooth glyph but no USB one.
-        snprintf(transport_text, sizeof(transport_text), "#%s %s#",
-                 state.usb_is_hid_ready ? "ffffff" : "ff0000", LV_SYMBOL_USB);
+        snprintf(transport_text, sizeof(transport_text), "#%s USB#",
+                 state.usb_is_hid_ready ? "ffffff" : "ff0000");
         break;
 
     case ZMK_TRANSPORT_BLE:
@@ -73,10 +72,10 @@ static void set_status_symbol(struct zmk_widget_output_status *widget, struct ou
             ble_color = "0000ff";
         }
 
-        // Symbol and profile number go in one label. Two labels aligned to
+        // Label and profile number go in one label. Two labels aligned to
         // opposite edges of a hand-sized box was what got them clipped.
-        snprintf(transport_text, sizeof(transport_text), "#%s %s %d#", ble_color,
-                 LV_SYMBOL_BLUETOOTH, state.active_profile_index + 1);
+        snprintf(transport_text, sizeof(transport_text), "#%s BLE %d#", ble_color,
+                 state.active_profile_index + 1);
         break;
     }
     }
@@ -118,6 +117,7 @@ int zmk_widget_output_status_init(struct zmk_widget_output_status *widget, lv_ob
     lv_obj_set_size(widget->obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
     widget->transport_label = lv_label_create(widget->obj);
+    lv_obj_set_style_text_font(widget->transport_label, &Fredoka_Bold_20, 0);
     lv_obj_align(widget->transport_label, LV_ALIGN_CENTER, 0, 0);
 
     widget->ble_label = lv_label_create(widget->obj);

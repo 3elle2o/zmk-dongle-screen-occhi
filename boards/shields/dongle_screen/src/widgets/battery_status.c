@@ -20,6 +20,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include "battery_status.h"
 #include "../brightness.h"
+#include <fonts.h>
 
 #if IS_ENABLED(CONFIG_ZMK_DONGLE_DISPLAY_DONGLE_BATTERY)
 #define SOURCE_OFFSET 1
@@ -264,6 +265,7 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
                              LV_COLOR_FORMAT_RGB565);
 
         // Number then bar, both on the same line, one cell per half.
+        lv_obj_set_style_text_font(battery_label, &Fredoka_Bold_20, 0);
         lv_obj_set_width(battery_label, BAT_LABEL_W);
         lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_RIGHT, 0);
         lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, i * BAT_PITCH, 0);

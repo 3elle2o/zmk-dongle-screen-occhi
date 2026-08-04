@@ -28,6 +28,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/wpm.h>
 
 #include "eyes_status.h"
+#include <fonts.h>
 
 #define EYES_W 220
 #define EYES_H 120
@@ -682,6 +683,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
     for (int i = 0; i < 3; i++) {
         widget->zzz[i] = lv_label_create(widget->obj);
         lv_label_set_text(widget->zzz[i], "z");
+        lv_obj_set_style_text_font(widget->zzz[i], &Fredoka_Bold_20, LV_PART_MAIN);
         lv_obj_set_style_text_color(widget->zzz[i], lv_color_white(), LV_PART_MAIN);
         lv_obj_align(widget->zzz[i], LV_ALIGN_CENTER, zx[i], zy[i]);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
