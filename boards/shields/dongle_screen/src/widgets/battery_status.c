@@ -34,7 +34,10 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 // whole indicator is one line tall instead of two.
 #define BAT_BAR_W 48
 #define BAT_BAR_H 5
-#define BAT_LABEL_W 28
+// Wide enough for "100". Fredoka's digits are wider than Montserrat's, and at
+// 28 a full charge would have been clipped by the label's own box - the same
+// trap that caught the connection indicator.
+#define BAT_LABEL_W 36
 // Both cells sit left of centre so the connection indicator has the right-hand
 // end of this row to itself. Tightened so that end can move inward, clear of
 // the lip on the case's right edge.
