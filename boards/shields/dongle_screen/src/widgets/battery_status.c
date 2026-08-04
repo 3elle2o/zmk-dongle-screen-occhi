@@ -40,7 +40,9 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 // empty part is invisible, so a half-full battery would read as a short stub
 // rather than as a half-full battery.
 #define BAT_BODY_W 28
-#define BAT_NUB_W 3
+#define BAT_NUB_W 2
+// Kept even: the body is an even number of pixels tall, so an odd terminal
+// height would sit a pixel off centre.
 #define BAT_NUB_H 4
 #define BAT_BAR_W (BAT_BODY_W + BAT_NUB_W)
 #define BAT_BAR_H 10
