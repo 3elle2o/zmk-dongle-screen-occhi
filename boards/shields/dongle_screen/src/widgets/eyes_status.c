@@ -79,9 +79,16 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define STRAIN_MS 420
 #define STRAIN_MIN 179
 
-#define SPIRAL_PTS 14
-#define SPIRAL_TURNS 540 // degrees swept from centre to rim
-#define SPIN_MS 1500
+// Proportioned off a reference frame of the manga dizzy-spiral: two full
+// turns, and a stroke about as wide as the gap between turns. At 1.5 turns
+// with the default LINE_W the turns sat exactly one stroke apart and merged
+// into a solid disc; at 6px over 1.5 turns it went wispy. Two turns over a
+// 25px radius puts the coils 12.5px apart, so a 6px stroke leaves 6.5px of
+// gap - very close to the reference's 1:1.
+#define SPIRAL_PTS 28
+#define SPIRAL_TURNS 720 // degrees swept from centre to rim
+// Slow. At 1.5s the free outer end whips round and reads as a fan blade.
+#define SPIN_MS 3500
 
 // 5 outer points alternating with 5 inner, plus a repeat of the first to close
 // the loop so the stroke joins cleanly.
@@ -149,7 +156,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     // 17px long and 14px wide, which reads as a lumpy blob rather than a star.
     // Spread out too, since a spiky shape needs more air than a bar.
     [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, EYE_W, EYE_H, 0, 0, 0, false},
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, EYE_W, EYE_H, 0, 0, 0, false, SHAPE_SAME, 0, 6, 0},
     // Defined but unmapped. One entry in layer_expr brings either back.
     [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
     [EXPR_SUSPICIOUS] = {SHAPE_BAR, EYE_W, 28, 13, 2, 14, false},

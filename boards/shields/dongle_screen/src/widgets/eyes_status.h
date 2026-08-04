@@ -7,8 +7,8 @@
 #include <lvgl.h>
 #include <zephyr/kernel.h>
 
-// Chevrons need 3 points; the confused spiral needs the rest.
-#define EYE_MAX_PTS 14
+// Chevrons need 3 points, the star 11; the confused spiral needs the rest.
+#define EYE_MAX_PTS 30
 
 // Each eye owns both a bar and a line object. Expressions swap which one is
 // visible rather than creating and deleting objects on the display thread.
