@@ -26,6 +26,7 @@ struct zmk_widget_eyes_status {
     int16_t openness; // 0-256, scales vertical extent; drives blinks and morphs
     int16_t strain;   // 0-256, how hard a squeeze is currently pushing
     int16_t spin;     // 0-359, rotation of the confused spiral
+    int16_t shake;    // horizontal shudder, applied to both eyes together
     int16_t gaze_x;
     int16_t gaze_y;
     bool idle;

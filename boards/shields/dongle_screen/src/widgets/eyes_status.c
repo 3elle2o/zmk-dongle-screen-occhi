@@ -79,6 +79,16 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define STRAIN_MS 420
 #define STRAIN_MIN 179
 
+// On top of the strain pulse, a squeeze shudders sideways: a short fast burst
+// then a long pause, rather than a constant tremble. The animation runs a
+// counter across the whole period and only produces movement in the first
+// SHAKE_ACTIVE of it, which is how the pause is achieved with one anim.
+#define SHAKE_PERIOD 1000
+#define SHAKE_ACTIVE 170
+#define SHAKE_PERIOD_MS 2200
+#define SHAKE_CYCLES 3
+#define SHAKE_PX 3
+
 // Proportioned off a reference frame of the manga dizzy-spiral: two full
 // turns, and a stroke about as wide as the gap between turns. At 1.5 turns
 // with the default LINE_W the turns sat exactly one stroke apart and merged
@@ -306,6 +316,12 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
+        // Same offset for both eyes, deliberately: this one shudders as a
+        // pair rather than each eye going its own way.
+        if (shape == SHAPE_CHEVRON_IN) {
+            dx += widget->shake;
+        }
+
         // Each spiral drifts on its own, at a different rate to the other, so
         // the pair looks unsteady rather than like one rigid assembly.
         if (shape == SHAPE_SPIRAL) {
@@ -379,6 +395,19 @@ static void spin_anim_cb(void *var, int32_t v) {
     apply_geometry(widget);
 }
 
+static void shake_anim_cb(void *var, int32_t v) {
+    struct zmk_widget_eyes_status *widget = var;
+    int32_t off = 0;
+
+    if (v < SHAKE_ACTIVE) {
+        int32_t deg = (v * 360 * SHAKE_CYCLES) / SHAKE_ACTIVE;
+        off = (sin_of(deg) * SHAKE_PX) / TRIG_MAX;
+    }
+
+    widget->shake = (int16_t)off;
+    apply_geometry(widget);
+}
+
 static void gaze_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->gaze_x = (int16_t)v;
@@ -425,11 +454,14 @@ static void loop_anim(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t 
 static void set_idle_motion(struct zmk_widget_eyes_status *widget) {
     lv_anim_delete(widget, strain_anim_cb);
     lv_anim_delete(widget, spin_anim_cb);
+    lv_anim_delete(widget, shake_anim_cb);
     widget->strain = OPEN_FULL;
     widget->spin = 0;
+    widget->shake = 0;
 
     if (widget->expr == EXPR_SQUEEZED) {
         loop_anim(widget, strain_anim_cb, OPEN_FULL, 0, STRAIN_MS, true);
+        loop_anim(widget, shake_anim_cb, 0, SHAKE_PERIOD, SHAKE_PERIOD_MS, false);
     } else if (widget->expr == EXPR_CONFUSED) {
         loop_anim(widget, spin_anim_cb, 0, 359, SPIN_MS, false);
     }
