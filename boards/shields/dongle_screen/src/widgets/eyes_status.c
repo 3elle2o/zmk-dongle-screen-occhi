@@ -139,9 +139,8 @@ enum eye_shape {
 // the bowl hanging beneath its left end. First point is the lid's right tip;
 // the rest sample the bowl.
 #define LID_PTS 8
-// Bowl width as a percentage of the lid's length. Narrow enough that the
-// stroke closes the bowl's interior and it renders solid.
-#define LID_BOWL_PCT 40
+// Bowl width as a percentage of the lid's length.
+#define LID_BOWL_PCT 55
 
 // A straight slanted lid closed off by a curve bulging below it. Outer corner
 // high, inner corner low, mirrored between the eyes.
@@ -164,6 +163,18 @@ static const uint8_t zigzag_jitter[] = {0, 3, 1, 4, 2, 5};
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
 #define ARC_PTS 5
+
+// Canvas behind the outline, for shapes that need a solid interior. lv_line
+// only strokes, and widening the stroke until it closes a shape destroys the
+// detail that defined it. Sized to the largest filled shape with headroom.
+#define EYE_FILL_W 72
+#define EYE_FILL_H 48
+// A scanline crosses at most this many edges. Nine-point shapes need far less.
+#define FILL_MAX_X 12
+
+// lv_color_t rather than a packed byte array, matching how battery_status.c
+// backs its canvas. Over-allocates against RGB565 but is the proven pattern.
+static lv_color_t eye_fill_buf[2][EYE_FILL_W * EYE_FILL_H];
 
 enum expr_id {
     EXPR_NEUTRAL = 0,
@@ -196,6 +207,7 @@ struct expression {
     int16_t spread;         // extra separation, pushing each eye outward
     int16_t rot;            // tilt in 0.1 degrees, mirrored between the eyes
     bool outline;           // bar shapes only: draw as a ring, not a solid
+    bool filled;            // line shapes only: fill the traced path solid
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -216,12 +228,12 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
     // Both eyes drawn identically rather than mirrored - the bowl sits under
     // the left end of each lid. That asymmetry is the look.
-    // Both solid. lv_line strokes and cannot fill, so these rely on the stroke
-    // being wider than the shape's interior - the same trick that makes the
-    // star solid. The box shrinks to compensate, since a fat stroke also
-    // pushes the outer boundary out by half its width.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED, 62, 26, 0, 0, 0, false, SHAPE_SAME, 0, 14, 0, 0},
-    [EXPR_ANGRY] = {SHAPE_ANGRY, 50, 28, 0, 0, 0, false, SHAPE_SAME, 0, 14, 0, 0},
+    // Both filled by the canvas and outlined by a thin stroke on top. The
+    // stroke's rounded joins are what keep the corners soft rather than
+    // stepped, and being thin it no longer swallows the detail that fattening
+    // it to close these shapes destroyed.
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, 62, 30, 0, 0, 0, false, SHAPE_SAME, 0, 6, 0, 0, false, true},
+    [EXPR_ANGRY] = {SHAPE_ANGRY, 62, 40, 0, 0, 0, false, SHAPE_SAME, 0, 6, 0, 0, false, true},
     // Sized to match the others: at 56 the disc was visibly smaller than a
     // neutral bar. Wider box means wider coil spacing, so the stroke goes up
     // with it to hold the reference's 1:1 stroke-to-gap.
@@ -464,6 +476,53 @@ static void set_star_points(struct zmk_widget_eyes_status *widget, int eye, int3
     lv_line_set_points(widget->line[eye], p, STAR_PTS);
 }
 
+// Even-odd scanline fill of the polygon the outline traces. Deliberately not
+// anti-aliased: the same points are stroked on top with rounded joins, and
+// that stroke both softens the corners and covers the stepped edges this
+// leaves behind.
+static void fill_polygon(lv_obj_t *canvas, const lv_point_precise_t *p, int n, int32_t ox,
+                         int32_t oy) {
+    lv_canvas_fill_bg(canvas, lv_color_black(), LV_OPA_COVER);
+
+    for (int32_t y = 0; y < EYE_FILL_H; y++) {
+        int32_t xs[FILL_MAX_X];
+        int cnt = 0;
+
+        for (int i = 0; i < n && cnt < FILL_MAX_X; i++) {
+            int j = (i + 1) % n;
+            int32_t y0 = (int32_t)p[i].y + oy;
+            int32_t y1 = (int32_t)p[j].y + oy;
+
+            // Half-open test, so a vertex lying exactly on the scanline is
+            // counted once rather than twice.
+            if ((y0 <= y && y1 > y) || (y1 <= y && y0 > y)) {
+                int32_t x0 = (int32_t)p[i].x + ox;
+                int32_t x1 = (int32_t)p[j].x + ox;
+                xs[cnt++] = x0 + ((y - y0) * (x1 - x0)) / (y1 - y0);
+            }
+        }
+
+        for (int a = 1; a < cnt; a++) {
+            int32_t v = xs[a];
+            int b = a - 1;
+            while (b >= 0 && xs[b] > v) {
+                xs[b + 1] = xs[b];
+                b--;
+            }
+            xs[b + 1] = v;
+        }
+
+        for (int k = 0; k + 1 < cnt; k += 2) {
+            int32_t from = MAX(xs[k], 0);
+            int32_t to = MIN(xs[k + 1], EYE_FILL_W - 1);
+
+            for (int32_t x = from; x <= to; x++) {
+                lv_canvas_set_px(canvas, x, y, lv_color_white(), LV_OPA_COVER);
+            }
+        }
+    }
+}
+
 static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     const struct expression *e = &expressions[widget->expr];
 
@@ -512,6 +571,7 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
                 h = 2;
             }
 
+            lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
 
@@ -537,28 +597,53 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
+        int npts;
+
         switch (shape) {
         case SHAPE_ARC_DOWN:
             set_arc_points(widget, i, e->w, box_h, inset);
+            npts = ARC_PTS;
             break;
         case SHAPE_ZIGZAG:
             set_zigzag_points(widget, i, e->w, box_h, inset);
+            npts = ZIGZAG_PTS;
             break;
         case SHAPE_LIDDED:
             set_lid_points(widget, i, e->w, box_h, inset);
+            npts = LID_PTS;
             break;
         case SHAPE_ANGRY:
             set_angry_points(widget, i, e->w, box_h, inset);
+            npts = ANGRY_PTS;
             break;
         case SHAPE_SPIRAL:
             set_spiral_points(widget, i, e->w, box_h, inset);
+            npts = SPIRAL_PTS;
             break;
         case SHAPE_STAR:
             set_star_points(widget, i, e->w, box_h, inset);
+            npts = STAR_PTS;
             break;
         default:
             set_chevron_points(widget, i, shape, e->w, box_h, widget->strain, inset);
+            npts = 3;
             break;
+        }
+
+        if (e->filled) {
+            // The canvas is larger than the shape's box, so the points are
+            // offset to sit centred in it and both objects can then align to
+            // the same point.
+            fill_polygon(widget->fill[i], widget->pts[i], npts, (EYE_FILL_W - e->w) / 2,
+                         (EYE_FILL_H - box_h) / 2);
+
+            lv_obj_remove_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_transform_pivot_x(widget->fill[i], EYE_FILL_W / 2, LV_PART_MAIN);
+            lv_obj_set_style_transform_pivot_y(widget->fill[i], EYE_FILL_H / 2, LV_PART_MAIN);
+            lv_obj_set_style_transform_rotation(widget->fill[i], rot, LV_PART_MAIN);
+            lv_obj_align(widget->fill[i], LV_ALIGN_CENTER, dx, dy);
+        } else {
+            lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
         }
 
         lv_obj_set_style_line_width(widget->line[i], lw, LV_PART_MAIN);
@@ -913,6 +998,13 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_set_style_bg_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_SCROLLABLE);
+
+        // Created before the line so it sits underneath it: the fill supplies
+        // the interior, the stroke on top supplies smooth, rounded edges.
+        widget->fill[i] = lv_canvas_create(widget->obj);
+        lv_canvas_set_buffer(widget->fill[i], eye_fill_buf[i], EYE_FILL_W, EYE_FILL_H,
+                             LV_COLOR_FORMAT_RGB565);
+        lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
 
         widget->line[i] = lv_line_create(widget->obj);
         lv_obj_remove_style_all(widget->line[i]);
