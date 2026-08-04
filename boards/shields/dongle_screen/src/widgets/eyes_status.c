@@ -189,9 +189,16 @@ enum eye_shape {
 // second contour in the eye's own path: an even-odd fill crosses it twice and
 // leaves it empty. The stroke is given only the outer contour, so the two
 // bridging edges between the contours are never drawn.
-#define SPARK_PTS 25
-#define SPARK_FILL_PCT 90 // tip reach, as a proportion of the eye's half-extent
-#define SPARK_IN_PCT 22   // waist between the tips, as a proportion of the tip
+// cos(2t) to the sixth, not the fourth: at the fourth the radius was still 66%
+// of the tip only 15 degrees off-axis, so the arms stayed fat near the base and
+// the whole thing read as a plus sign. The sixth drops that to 46%.
+//
+// 33 points because sharp arms need describing - at 25 only two samples fell on
+// each side of an arm, which made them visibly faceted.
+#define SPARK_PTS 33
+#define SPARK_FILL_PCT 100 // tip reach, as a proportion of the eye's half-extent
+#define SPARK_IN_PCT 8     // waist between the tips, as a proportion of the tip
+#define SPARK_EDGE_W 2     // black outline, purely to anti-alias the hole's edge
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
@@ -525,8 +532,9 @@ static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, in
         int32_t deg = (360 * (i % (SPARK_PTS - 1))) / (SPARK_PTS - 1);
 
         int32_t c = cos_of(2 * deg);
-        int32_t u = (c * c) / TRIG_MAX;
-        u = (u * u) / TRIG_MAX;
+        int32_t sq = (c * c) / TRIG_MAX;
+        int32_t u = (sq * sq) / TRIG_MAX;
+        u = (u * sq) / TRIG_MAX;
 
         int32_t r = (SPARK_IN_PCT * TRIG_MAX) / 100;
         r += ((TRIG_MAX - r) * u) / TRIG_MAX;
@@ -541,9 +549,17 @@ static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, in
         n++;
     }
 
-    // Only the outer contour is stroked: the sparkle's edge is internal, and
-    // stroking it would also draw the bridges.
+    // Only the outer contour goes to the white stroke: the sparkle's edge is
+    // internal, and stroking it white would fill the hole back in.
     lv_line_set_points(widget->line[eye], p, 21);
+
+    // The sparkle's own points are contiguous from index 21, so its outline
+    // can share them. Black, and thin - it exists to smooth the fill's stepped
+    // edge, which has no anti-aliasing of its own, not to be seen.
+    lv_line_set_points(widget->hole[eye], &p[21], SPARK_PTS);
+    lv_obj_remove_flag(widget->hole[eye], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(widget->hole[eye], w, box_h);
+
     return n;
 }
 
@@ -726,6 +742,7 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
             lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
 
             lv_obj_set_size(widget->bar[i], e->w, h);
@@ -738,6 +755,7 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         }
 
         lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
         int npts;
@@ -789,6 +807,11 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
         lv_obj_set_style_line_width(widget->line[i], lw, LV_PART_MAIN);
         lv_obj_set_size(widget->line[i], e->w, box_h);
+
+        if (!lv_obj_has_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_align(widget->hole[i], LV_ALIGN_CENTER, dx, dy);
+            lv_obj_move_foreground(widget->hole[i]);
+        }
         // Aligns by the object's own centre, exactly like the bars do - the
         // line must not carry an extra half-width offset.
         lv_obj_align(widget->line[i], LV_ALIGN_CENTER, dx, dy);
@@ -1215,6 +1238,14 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_canvas_set_buffer(widget->fill[i], eye_fill_buf[i], EYE_FILL_W, EYE_FILL_H,
                              LV_COLOR_FORMAT_RGB565);
         lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
+
+        widget->hole[i] = lv_line_create(widget->obj);
+        lv_obj_remove_style_all(widget->hole[i]);
+        lv_obj_set_style_line_color(widget->hole[i], lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_line_width(widget->hole[i], SPARK_EDGE_W, LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(widget->hole[i], true, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(widget->hole[i], 0, LV_PART_MAIN);
+        lv_obj_add_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN);
 
         widget->line[i] = lv_line_create(widget->obj);
         lv_obj_remove_style_all(widget->line[i]);
