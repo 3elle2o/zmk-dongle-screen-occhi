@@ -209,7 +209,8 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Both morph in a single frame. These are the layer expressions, so they
     // want to land the instant the key goes down; the default 200ms is fine
     // for a mood drifting in, but reads as lag when it is answering a keypress.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H, 0, 0, 0, false, 9, 8, 0, true, 80},
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H / 2, 0, 0, 0, false, 9, 8, 0, true,
+                       80},
     [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
     // Wider box means wider coil spacing, so the stroke goes up with it to
     // hold the reference's 1:1 stroke-to-gap.
@@ -381,12 +382,17 @@ static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_
     const int32_t eye_w = w - LID_TAIL - 2 * inset;
     const int32_t x0 = inset;
 
+    // What survives the cut, which is half of the eye this is derived from.
+    // The box is therefore half of neutral's height, and the notional full
+    // eye - twice this - is hung above the cut line so its bottom half lands
+    // inside the box.
+    const int32_t bowl_h = h - 2 * inset;
+
     lv_point_precise_t rr[EYE_MAX_PTS];
     lv_point_precise_t half[EYE_MAX_PTS];
     lv_point_precise_t *p = widget->pts[eye];
 
-    // Full height, then cut in half, so the bowl is literally neutral's bottom.
-    int n = rounded_rect(rr, x0, top + inset - h, eye_w, 2 * (h - 2 * inset), EYE_R);
+    int n = rounded_rect(rr, x0, top + inset - bowl_h, eye_w, 2 * bowl_h, EYE_R);
     n = clip_below(half, rr, n, x0, eye_w, top + inset, top + inset);
 
     // Tail first, so the stroke lays the top edge down before rounding the
