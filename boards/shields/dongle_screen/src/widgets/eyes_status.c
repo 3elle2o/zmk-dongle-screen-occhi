@@ -146,6 +146,7 @@ enum eye_shape {
     SHAPE_LIDDED,
     SHAPE_ANGRY,
     SHAPE_CROPPED,
+    SHAPE_TWINKLE,
     SHAPE_SPIRAL,
 };
 
@@ -176,18 +177,21 @@ enum eye_shape {
 #define QUIRK_UP_PCT 116
 #define QUIRK_SMALL_PCT 62
 
-// Highlight punched out of the eye, offset up and outward from its centre.
-// A four-pointed sparkle rather than a circle: radius follows cos(2t) raised
-// to the fourth, which puts sharp tips on the axes and pinches the sides
-// inward between them. Traced once at init - it never changes - and stroked
-// black wide enough to fill itself.
-#define SPARK_D 22
-#define SPARK_DX 12
-#define SPARK_DY 20
+// A sparkle punched clean through the eye: centred, filling nearly its whole
+// height and width, sides bowed inward. Radius follows cos(2t) to the fourth,
+// which puts sharp tips on the axes and pinches between them. The tips are
+// taken as a proportion of the eye rather than fixed, so the sparkle keeps
+// filling it if the eye is ever resized, and it comes out elongated because
+// the eye is.
+//
+// It's a hole, not a black shape laid on top - at this size a stroke could
+// never fill one, and a canvas over the eye would need alpha. Instead it's a
+// second contour in the eye's own path: an even-odd fill crosses it twice and
+// leaves it empty. The stroke is given only the outer contour, so the two
+// bridging edges between the contours are never drawn.
 #define SPARK_PTS 25
-#define SPARK_R_OUT 9
-#define SPARK_R_IN 2
-#define SPARK_LINE_W 5
+#define SPARK_FILL_PCT 90 // tip reach, as a proportion of the eye's half-extent
+#define SPARK_IN_PCT 22   // waist between the tips, as a proportion of the tip
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
@@ -244,7 +248,6 @@ struct expression {
     bool filled;      // line shapes only: fill the traced path solid
     int16_t morph_ms; // total time to blink into this expression; 0 = default
     bool no_blink;    // never blink in this expression
-    bool twinkle;     // punch a black highlight out of each eye
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -286,8 +289,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_NEUTRAL_SMALL] = {SHAPE_BAR, EYE_W * QUIRK_SMALL_PCT / 100,
                             EYE_H * QUIRK_SMALL_PCT / 100, 0, 0, EYE_R * QUIRK_SMALL_PCT / 100,
                             false},
-    [EXPR_NEUTRAL_TWINKLE] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, false, 0, 0, 0, false, 0,
-                              false, true},
+    [EXPR_NEUTRAL_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
@@ -496,6 +498,55 @@ static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_
 // Neutral, sliced by a line running from high on the outer edge to low on the
 // inner one, keeping what falls below. Being a cut of the same rounded
 // rectangle, the curve of the remaining bottom is neutral's own.
+// Neutral with a sparkle-shaped hole through it. The outer contour is
+// neutral's outline; the sparkle follows as a second contour in the same
+// array, which is what turns it into a hole under an even-odd fill.
+//
+// Point 20 repeats point 0. That closes the outer contour for the stroke, and
+// makes both bridging edges - out to the sparkle and back - run between the
+// same two points, so the bridge has no area and leaves no wedge in the fill.
+static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                              int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2 + inset;
+    const int32_t eh = h - 2 * inset;
+    const int32_t ew = w - 2 * inset;
+    const int32_t cx = inset + ew / 2;
+    const int32_t cy = top + eh / 2;
+    const int32_t tip_x = (ew / 2) * SPARK_FILL_PCT / 100;
+    const int32_t tip_y = (eh / 2) * SPARK_FILL_PCT / 100;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    int n = rounded_rect(p, inset, top, ew, eh, EYE_R);
+    p[n] = p[0];
+    n++;
+
+    for (int i = 0; i < SPARK_PTS; i++) {
+        int32_t deg = (360 * (i % (SPARK_PTS - 1))) / (SPARK_PTS - 1);
+
+        int32_t c = cos_of(2 * deg);
+        int32_t u = (c * c) / TRIG_MAX;
+        u = (u * u) / TRIG_MAX;
+
+        int32_t r = (SPARK_IN_PCT * TRIG_MAX) / 100;
+        r += ((TRIG_MAX - r) * u) / TRIG_MAX;
+
+        // No openness scaling needed here: eh already carries it, so the
+        // sparkle closes with the eye automatically.
+        int32_t rx = (r * tip_x) / TRIG_MAX;
+        int32_t ry = (r * tip_y) / TRIG_MAX;
+
+        p[n].x = cx + (rx * cos_of(deg)) / TRIG_MAX;
+        p[n].y = cy + (ry * sin_of(deg)) / TRIG_MAX;
+        n++;
+    }
+
+    // Only the outer contour is stroked: the sparkle's edge is internal, and
+    // stroking it would also draw the bridges.
+    lv_line_set_points(widget->line[eye], p, 21);
+    return n;
+}
+
 // Neutral with a flat slice off the top. Same rounded rectangle and the same
 // clip as angry, only the cut is level rather than slanted, so the bottom is
 // neutral's own curve untouched.
@@ -683,21 +734,10 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
 
-            // Offset scales with openness so it stays inside the eye while
-            // the eye is closing rather than floating free of it.
-            if (e->twinkle) {
-                lv_obj_remove_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align(widget->spark[i], LV_ALIGN_CENTER, dx + (i ? SPARK_DX : -SPARK_DX),
-                             dy - (int16_t)scaled(SPARK_DY, widget->openness));
-                lv_obj_move_foreground(widget->spark[i]);
-            } else {
-                lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
-            }
             continue;
         }
 
         lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
         int npts;
@@ -716,6 +756,9 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             break;
         case SHAPE_CROPPED:
             npts = set_cropped_points(widget, i, e->w, box_h, inset);
+            break;
+        case SHAPE_TWINKLE:
+            npts = set_twinkle_points(widget, i, e->w, box_h, inset);
             break;
         case SHAPE_SPIRAL:
             set_spiral_points(widget, i, e->w, box_h, inset);
@@ -953,30 +996,6 @@ static void blink_timer_cb(lv_timer_t *timer) {
     lv_timer_set_period(timer, rnd_range(BLINK_MIN_MS, BLINK_MAX_MS));
 }
 
-// Both eyes draw the same sparkle, so one path serves both. lv_line keeps the
-// pointer rather than copying, which is fine for something that never changes.
-static lv_point_precise_t spark_pts[SPARK_PTS];
-
-static void build_spark_path(void) {
-    const int32_t c0 = SPARK_D / 2;
-
-    for (int i = 0; i < SPARK_PTS - 1; i++) {
-        int32_t deg = (360 * i) / (SPARK_PTS - 1);
-
-        // cos(2t)^4: 1 on the axes, falling away steeply, so the sides bow in
-        // toward the centre instead of running straight between the tips.
-        int32_t c = cos_of(2 * deg);
-        int32_t u = (c * c) / TRIG_MAX;
-        u = (u * u) / TRIG_MAX;
-
-        int32_t r = SPARK_R_IN + ((SPARK_R_OUT - SPARK_R_IN) * u) / TRIG_MAX;
-        spark_pts[i].x = c0 + (r * cos_of(deg)) / TRIG_MAX;
-        spark_pts[i].y = c0 + (r * sin_of(deg)) / TRIG_MAX;
-    }
-
-    spark_pts[SPARK_PTS - 1] = spark_pts[0];
-}
-
 // Which variation is currently standing in for the resting face, if any.
 // resolve() only lets it through when the face would otherwise be neutral, so
 // a layer or a burst of typing takes precedence and it simply lapses.
@@ -1204,21 +1223,6 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_set_style_line_rounded(widget->line[i], true, LV_PART_MAIN);
         lv_obj_set_style_pad_all(widget->line[i], 0, LV_PART_MAIN);
         lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
-    }
-
-    build_spark_path();
-
-    // Created after the eyes so they draw on top of them.
-    for (int i = 0; i < 2; i++) {
-        widget->spark[i] = lv_line_create(widget->obj);
-        lv_obj_remove_style_all(widget->spark[i]);
-        lv_obj_set_size(widget->spark[i], SPARK_D, SPARK_D);
-        lv_obj_set_style_line_color(widget->spark[i], lv_color_black(), LV_PART_MAIN);
-        lv_obj_set_style_line_width(widget->spark[i], SPARK_LINE_W, LV_PART_MAIN);
-        lv_obj_set_style_line_rounded(widget->spark[i], true, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(widget->spark[i], 0, LV_PART_MAIN);
-        lv_line_set_points(widget->spark[i], spark_pts, SPARK_PTS);
-        lv_obj_add_flag(widget->spark[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     init_zzz(widget);

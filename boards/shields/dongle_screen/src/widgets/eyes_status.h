@@ -9,7 +9,7 @@
 
 // The spiral needs 28. A rounded rectangle traced for the derived shapes needs
 // 20, and clipping it can add two more.
-#define EYE_MAX_PTS 34
+#define EYE_MAX_PTS 56
 
 // Each eye owns both a bar and a line object. Expressions swap which one is
 // visible rather than creating and deleting objects on the display thread.
@@ -19,7 +19,6 @@ struct zmk_widget_eyes_status {
     lv_obj_t *bar[2];
     lv_obj_t *line[2];
     lv_obj_t *fill[2];  // canvas under the outline, for shapes drawn solid
-    lv_obj_t *spark[2]; // black highlight punched out of the eye
     lv_point_precise_t pts[2][EYE_MAX_PTS];
     lv_obj_t *zzz[3]; // drift up and fade once idle has gone on a while
 
