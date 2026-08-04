@@ -246,7 +246,10 @@ static const struct expression expressions[EXPR_COUNT] = {
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
 static const enum expr_id layer_expr[] = {
-    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_UNAMUSED,
+    // sym has no expression of its own for now, so it shows the resting face.
+    // Note that means it looks like the base layer but without the activity
+    // and typing-speed reactions, which only run on layer 0.
+    [0] = EXPR_NEUTRAL, [1] = EXPR_NEUTRAL, [2] = EXPR_UNAMUSED,
     [3] = EXPR_ANGRY,   [4] = EXPR_SHOCK,
 };
 
