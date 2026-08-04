@@ -69,10 +69,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 // ZMK's WPM is a rolling estimate and bounces, so each threshold releases
 // well below where it triggers.
-#define WPM_SQUEEZE_ON 50
-#define WPM_SQUEEZE_OFF 42
-#define WPM_CONFUSED_ON 70
-#define WPM_CONFUSED_OFF 62
+#define WPM_SQUEEZE_ON 40
+#define WPM_SQUEEZE_OFF 33
+#define WPM_CONFUSED_ON 60
+#define WPM_CONFUSED_OFF 52
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL.
@@ -89,6 +89,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define SPIRAL_TURNS 720 // degrees swept from centre to rim
 // Slow. At 1.5s the free outer end whips round and reads as a fan blade.
 #define SPIN_MS 3500
+#define WOBBLE_PX 3
 
 // 5 outer points alternating with 5 inner, plus a repeat of the first to close
 // the loop so the stroke joins cleanly.
@@ -126,6 +127,7 @@ enum expr_id {
     EXPR_CONFUSED,
     EXPR_WINK,
     EXPR_STARS,
+    EXPR_ANGRY,
     EXPR_COUNT,
 };
 
@@ -141,6 +143,7 @@ struct expression {
     int16_t h_r;            // right eye height override; 0 means same as h
     int16_t line_w;         // stroke width for line shapes; 0 means LINE_W
     int16_t spread;         // extra separation, pushing each eye outward
+    int16_t rot;            // tilt in 0.1 degrees, mirrored between the eyes
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -156,7 +159,13 @@ static const struct expression expressions[EXPR_COUNT] = {
     // 17px long and 14px wide, which reads as a lumpy blob rather than a star.
     // Spread out too, since a spiky shape needs more air than a bar.
     [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, EYE_W, EYE_H, 0, 0, 0, false, SHAPE_SAME, 0, 6, 0},
+    // Bars tilted toward each other. The tilt is mirrored, so this is the
+    // magnitude and the left eye takes it positive.
+    [EXPR_ANGRY] = {SHAPE_BAR, EYE_W, 34, 0, 0, 17, false, SHAPE_SAME, 0, 0, 0, 180},
+    // Sized to match the others: at 56 the disc was visibly smaller than a
+    // neutral bar. Wider box means wider coil spacing, so the stroke goes up
+    // with it to hold the reference's 1:1 stroke-to-gap.
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 9, 0},
     // Defined but unmapped. One entry in layer_expr brings either back.
     [EXPR_HAPPY] = {SHAPE_CHEVRON_UP, EYE_W, EYE_H, 0, 0, 0, false},
     [EXPR_SUSPICIOUS] = {SHAPE_BAR, EYE_W, 28, 13, 2, 14, false},
@@ -165,7 +174,7 @@ static const struct expression expressions[EXPR_COUNT] = {
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
 static const enum expr_id layer_expr[] = {
-    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_STARS,
+    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_ANGRY,
     [3] = EXPR_DEADPAN, [4] = EXPR_SHOCK,
 };
 
@@ -245,10 +254,13 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
     const int32_t cy = h / 2;
     const int32_t r_max = scaled(MIN(w, h) / 2 - inset, widget->openness);
     const int32_t last = SPIRAL_PTS - 1;
+    // Offset so the two eyes aren't rotating in lockstep, which looks
+    // mechanical. 137 is just a number that doesn't divide neatly into 360.
+    const int32_t phase = widget->spin + (eye ? 137 : 0);
     lv_point_precise_t *p = widget->pts[eye];
 
     for (int i = 0; i < SPIRAL_PTS; i++) {
-        int32_t deg = widget->spin + (SPIRAL_TURNS * i) / last;
+        int32_t deg = phase + (SPIRAL_TURNS * i) / last;
         int32_t r = (r_max * i) / last;
         p[i].x = cx + (r * cos_of(deg)) / TRIG_MAX;
         p[i].y = cy + (r * sin_of(deg)) / TRIG_MAX;
@@ -294,6 +306,14 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
+        // Each spiral drifts on its own, at a different rate to the other, so
+        // the pair looks unsteady rather than like one rigid assembly.
+        if (shape == SHAPE_SPIRAL) {
+            int32_t rate = i ? 3 : 2;
+            dx += (int16_t)((cos_of(widget->spin * rate + i * 90) * WOBBLE_PX) / TRIG_MAX);
+            dy += (int16_t)((sin_of(widget->spin * rate) * WOBBLE_PX) / TRIG_MAX);
+        }
+
         if (shape == SHAPE_BAR) {
             int32_t h = scaled(box_h, widget->openness);
             if (h < 2) {
@@ -305,6 +325,15 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
             lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
+
+            // Mirrored, so the pair tilts toward each other rather than both
+            // leaning the same way. Pivot has to be moved off the default
+            // top-left corner or the bar swings instead of tilting.
+            lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
+            lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
+            lv_obj_set_style_transform_rotation(widget->bar[i], i ? -e->rot : e->rot,
+                                                LV_PART_MAIN);
+
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
             continue;
         }
@@ -469,8 +498,13 @@ static void blink_timer_cb(lv_timer_t *timer) {
     struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
     const struct expression *e = &expressions[widget->expr];
 
-    // Already-flat expressions have nothing left to close.
-    if (e->h > 24 && widget->openness == OPEN_FULL) {
+    // Already-flat expressions have nothing left to close. Neither the spiral
+    // nor the star blinks: openness scales their radius, so a blink collapses
+    // and reinflates the whole shape, which reads as the animation restarting
+    // rather than as an eye closing.
+    bool blinks = (e->shape != SHAPE_SPIRAL && e->shape != SHAPE_STAR);
+
+    if (blinks && e->h > 24 && widget->openness == OPEN_FULL) {
         animate(widget, openness_anim_cb, OPEN_FULL, OPEN_SHUT, BLINK_CLOSE_MS, 0,
                 lv_anim_path_ease_in, NULL);
         animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, BLINK_OPEN_MS, BLINK_CLOSE_MS,

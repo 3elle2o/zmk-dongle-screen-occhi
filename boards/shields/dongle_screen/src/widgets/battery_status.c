@@ -31,13 +31,13 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
 // The percentage sits beside the bar rather than on a row above it, so the
 // whole indicator is one line tall instead of two.
-#define BAT_BAR_W 56
+#define BAT_BAR_W 48
 #define BAT_BAR_H 5
 #define BAT_LABEL_W 28
 // Both cells sit left of centre so the connection indicator has the right-hand
 // end of this row to itself. Tightened so that end can move inward, clear of
 // the lip on the case's right edge.
-#define BAT_PITCH 84
+#define BAT_PITCH 76
 
 struct battery_state
 {
