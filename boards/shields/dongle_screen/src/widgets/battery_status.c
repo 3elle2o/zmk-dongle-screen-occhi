@@ -32,13 +32,18 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
 // The percentage sits beside the bar rather than on a row above it, so the
 // whole indicator is one line tall instead of two.
-// The number is the real indicator; the bar is a glanceable hint beside it, so
-// it gives up width first when the row is tight.
-#define BAT_BAR_W 28
+// The number is the real indicator; the icon is a glanceable hint beside it,
+// so it gives up width first when the row is tight.
+//
+// Drawn as an outlined body with a terminal on the end, not as a solid bar.
+// A solid bar filling from the left cannot work on a black background: the
+// empty part is invisible, so a half-full battery would read as a short stub
+// rather than as a half-full battery.
+#define BAT_BODY_W 28
+#define BAT_NUB_W 3
+#define BAT_NUB_H 4
+#define BAT_BAR_W (BAT_BODY_W + BAT_NUB_W)
 #define BAT_BAR_H 10
-// Chamfer at each corner. At 5px tall a single knocked-out pixel was enough to
-// suggest a rounded end; at 10 it needs a few.
-#define BAT_BAR_CORNER 3
 // Wide enough for "100". Fredoka's digits are wider than Montserrat's, and at
 // 28 a full charge would have been clipped by the label's own box - the same
 // trap that caught the connection indicator.
@@ -105,46 +110,64 @@ static bool is_peripheral_reconnecting(uint8_t source, uint8_t new_level)
 
 static void draw_battery(lv_obj_t *canvas, uint8_t level, bool usb_present)
 {
+    const lv_color_t bg = lv_color_black();
+    lv_color_t fg;
 
     if (level < 1)
     {
-        lv_canvas_fill_bg(canvas, lv_palette_main(LV_PALETTE_RED), LV_OPA_COVER);
+        fg = lv_palette_main(LV_PALETTE_RED);
     }
     else if (level <= 10)
     {
-        lv_canvas_fill_bg(canvas, lv_palette_main(LV_PALETTE_YELLOW), LV_OPA_COVER);
+        fg = lv_palette_main(LV_PALETTE_YELLOW);
     }
     else
     {
-        lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
+        fg = lv_color_white();
     }
 
-    // Chamfer all four corners so the bar reads as rounded rather than as a
-    // hard rectangle.
-    for (int i = 0; i < BAT_BAR_CORNER; i++)
+    lv_canvas_fill_bg(canvas, bg, LV_OPA_COVER);
+
+    // Body outline. Drawn pixel by pixel: lv_canvas_draw_rect doesn't exist in
+    // LVGL v8+.
+    for (int x = 0; x < BAT_BODY_W; x++)
     {
-        for (int j = 0; j < BAT_BAR_CORNER - i; j++)
+        lv_canvas_set_px(canvas, x, 0, fg, LV_OPA_COVER);
+        lv_canvas_set_px(canvas, x, BAT_BAR_H - 1, fg, LV_OPA_COVER);
+    }
+    for (int y = 0; y < BAT_BAR_H; y++)
+    {
+        lv_canvas_set_px(canvas, 0, y, fg, LV_OPA_COVER);
+        lv_canvas_set_px(canvas, BAT_BODY_W - 1, y, fg, LV_OPA_COVER);
+    }
+
+    // Clip the four corners so it doesn't read as a hard rectangle.
+    lv_canvas_set_px(canvas, 0, 0, bg, LV_OPA_COVER);
+    lv_canvas_set_px(canvas, BAT_BODY_W - 1, 0, bg, LV_OPA_COVER);
+    lv_canvas_set_px(canvas, 0, BAT_BAR_H - 1, bg, LV_OPA_COVER);
+    lv_canvas_set_px(canvas, BAT_BODY_W - 1, BAT_BAR_H - 1, bg, LV_OPA_COVER);
+
+    // Terminal on the right-hand end.
+    for (int x = BAT_BODY_W; x < BAT_BODY_W + BAT_NUB_W; x++)
+    {
+        for (int y = (BAT_BAR_H - BAT_NUB_H) / 2; y < (BAT_BAR_H + BAT_NUB_H) / 2; y++)
         {
-            lv_canvas_set_px(canvas, i, j, lv_color_black(), LV_OPA_COVER);
-            lv_canvas_set_px(canvas, BAT_BAR_W - 1 - i, j, lv_color_black(), LV_OPA_COVER);
-            lv_canvas_set_px(canvas, i, BAT_BAR_H - 1 - j, lv_color_black(), LV_OPA_COVER);
-            lv_canvas_set_px(canvas, BAT_BAR_W - 1 - i, BAT_BAR_H - 1 - j, lv_color_black(),
-                             LV_OPA_COVER);
+            lv_canvas_set_px(canvas, x, y, fg, LV_OPA_COVER);
         }
     }
 
-    if (level <= 99 && level > 0)
+    // Charge, filling the interior from the left. Inset by the outline plus a
+    // pixel of breathing room on every side.
+    if (level > 0)
     {
-        // The bar is no longer 100px wide, so charge maps onto it rather than
-        // being used directly as an x coordinate.
-        int filled = (level * (BAT_BAR_W - 2)) / 100;
+        const int inner = BAT_BODY_W - 4;
+        int filled = (level * inner) / 100;
 
-        // Drawn pixel by pixel: lv_canvas_draw_rect doesn't exist in LVGL v8+.
-        for (int x = 1 + filled; x < BAT_BAR_W - 1; x++)
+        for (int x = 2; x < 2 + filled; x++)
         {
-            for (int y = 1; y < BAT_BAR_H - 1; y++)
+            for (int y = 2; y < BAT_BAR_H - 2; y++)
             {
-                lv_canvas_set_px(canvas, x, y, lv_color_black(), LV_OPA_COVER);
+                lv_canvas_set_px(canvas, x, y, fg, LV_OPA_COVER);
             }
         }
     }
