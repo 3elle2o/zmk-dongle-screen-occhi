@@ -82,9 +82,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define WPM_CONFUSED_OFF 62
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
-// is how far shut it gets at the bottom of the pulse, out of OPEN_FULL.
-#define STRAIN_MS 420
-#define STRAIN_MIN 179
+// is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
+// shallower dip than before, and quicker, so it reads as a tremor under load
+// rather than as the eyes repeatedly closing.
+#define STRAIN_MS 260
+#define STRAIN_MIN 216
 
 // On top of the strain pulse, a squeeze shudders sideways: a short fast burst
 // then a long pause, rather than a constant tremble. The animation runs a
@@ -104,8 +106,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // gap - very close to the reference's 1:1.
 #define SPIRAL_PTS 28
 #define SPIRAL_TURNS 720 // degrees swept from centre to rim
-// Slow. At 1.5s the free outer end whips round and reads as a fan blade.
-#define SPIN_MS 3500
+// 1.5s whipped the free outer end round like a fan blade; 3.5s was sedate.
+#define SPIN_MS 2400
 
 // The drift has its own slow driver rather than being derived from `spin`.
 // Dividing spin down would have snapped every time it wrapped 359 -> 0, since
@@ -187,8 +189,9 @@ struct expression {
     bool wander;
     int16_t line_w; // stroke width for line shapes; 0 means LINE_W
     int16_t spread; // extra separation, pushing each eye outward
-    int16_t rot;    // tilt in 0.1 degrees, mirrored between the eyes
-    bool filled;    // line shapes only: fill the traced path solid
+    int16_t rot;      // tilt in 0.1 degrees, mirrored between the eyes
+    bool filled;      // line shapes only: fill the traced path solid
+    int16_t morph_ms; // total time to blink into this expression; 0 = default
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -202,8 +205,12 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Neutral's own outline, cut. Their boxes are neutral's size plus whatever
     // the cut needs - the lid's tail, and nothing extra for angry. Unamused
     // spreads slightly, since the tail eats into the gap between the eyes.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H, 0, 0, 0, false, 9, 8, 0, true},
-    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true},
+    //
+    // Both morph in a single frame. These are the layer expressions, so they
+    // want to land the instant the key goes down; the default 200ms is fine
+    // for a mood drifting in, but reads as lag when it is answering a keypress.
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H, 0, 0, 0, false, 9, 8, 0, true, 80},
+    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
     // Wider box means wider coil spacing, so the stroke goes up with it to
     // hold the reference's 1:1 stroke-to-gap.
     [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 12},
@@ -756,8 +763,10 @@ static void morph_open(lv_anim_t *a) {
 
     set_idle_motion(widget);
     apply_geometry(widget);
-    animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, MORPH_OPEN_MS, 0,
-            lv_anim_path_ease_out, NULL);
+
+    uint32_t open_ms = e->morph_ms ? (uint32_t)e->morph_ms / 2 : MORPH_OPEN_MS;
+    animate(widget, openness_anim_cb, OPEN_SHUT, OPEN_FULL, open_ms, 0, lv_anim_path_ease_out,
+            NULL);
 }
 
 static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id id) {
@@ -790,8 +799,13 @@ static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id i
         lv_timer_resume(zzz_timer);
     }
 
+    // Timed by where it's going, not where it's coming from - a snappy
+    // expression should arrive snappily regardless of what preceded it.
+    uint32_t close_ms = expressions[id].morph_ms ? (uint32_t)expressions[id].morph_ms / 2
+                                                 : MORPH_CLOSE_MS;
+
     lv_anim_delete(widget, openness_anim_cb);
-    animate(widget, openness_anim_cb, widget->openness, OPEN_SHUT, MORPH_CLOSE_MS, 0,
+    animate(widget, openness_anim_cb, widget->openness, OPEN_SHUT, close_ms, 0,
             lv_anim_path_ease_in, morph_open);
 }
 
