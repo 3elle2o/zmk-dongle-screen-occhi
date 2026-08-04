@@ -128,9 +128,38 @@ enum eye_shape {
     SHAPE_CHEVRON_UP,
     SHAPE_CHEVRON_IN,
     SHAPE_ARC_DOWN,
+    SHAPE_ZIGZAG,
+    SHAPE_LIDDED,
+    SHAPE_ANGRY,
     SHAPE_SPIRAL,
     SHAPE_STAR,
 };
+
+// One continuous stroke: right to left across the lid, then down and around
+// the bowl hanging beneath its left end. First point is the lid's right tip;
+// the rest sample the bowl.
+#define LID_PTS 8
+// Bowl width as a percentage of the lid's length. Narrow enough that the
+// stroke closes the bowl's interior and it renders solid.
+#define LID_BOWL_PCT 40
+
+// A straight slanted lid closed off by a curve bulging below it. Outer corner
+// high, inner corner low, mirrored between the eyes.
+#define ANGRY_PTS 9
+// How far below the outer corner the inner corner sits, and how far the curve
+// bulges below the chord between them - both as a percentage of usable height.
+#define ANGRY_SLANT_PCT 42
+#define ANGRY_BULGE_PCT 58
+
+// Six points is five passes across the eye. More, thinner passes read as a
+// scribble; fewer, fatter ones read as a bar with notches.
+#define ZIGZAG_PTS 6
+
+// Inward nudges so the passes don't all start and stop on the same two
+// columns. Applied toward the middle only, never outward, so a jittered point
+// can't land outside the line object and get clipped. The two eyes read the
+// table from different offsets so they aren't identical.
+static const uint8_t zigzag_jitter[] = {0, 3, 1, 4, 2, 5};
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
 // sampling a sine gives it an actual bow.
@@ -148,7 +177,8 @@ enum expr_id {
     EXPR_CONFUSED,
     EXPR_WINK,
     EXPR_STARS,
-    EXPR_FRUSTRATED,
+    EXPR_UNAMUSED,
+    EXPR_ANGRY,
     EXPR_COUNT,
 };
 
@@ -165,6 +195,7 @@ struct expression {
     int16_t line_w;         // stroke width for line shapes; 0 means LINE_W
     int16_t spread;         // extra separation, pushing each eye outward
     int16_t rot;            // tilt in 0.1 degrees, mirrored between the eyes
+    bool outline;           // bar shapes only: draw as a ring, not a solid
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -183,10 +214,14 @@ static const struct expression expressions[EXPR_COUNT] = {
     // 17px long and 14px wide, which reads as a lumpy blob rather than a star.
     // Spread out too, since a spiky shape needs more air than a bar.
     [EXPR_STARS] = {SHAPE_STAR, 76, 76, 0, 0, 0, false, SHAPE_SAME, 0, 10, 8},
-    // Flat, long and steeply tilted, inner ends dropping toward each other.
-    // The first attempt was 56x34 with a full-capsule radius, which came out
-    // as a fat lozenge; the reference is much closer to a thick stroke.
-    [EXPR_FRUSTRATED] = {SHAPE_BAR, 62, 16, 0, 0, 8, false, SHAPE_SAME, 0, 0, 0, 220},
+    // Both eyes drawn identically rather than mirrored - the bowl sits under
+    // the left end of each lid. That asymmetry is the look.
+    // Both solid. lv_line strokes and cannot fill, so these rely on the stroke
+    // being wider than the shape's interior - the same trick that makes the
+    // star solid. The box shrinks to compensate, since a fat stroke also
+    // pushes the outer boundary out by half its width.
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, 62, 26, 0, 0, 0, false, SHAPE_SAME, 0, 14, 0, 0},
+    [EXPR_ANGRY] = {SHAPE_ANGRY, 50, 28, 0, 0, 0, false, SHAPE_SAME, 0, 14, 0, 0},
     // Sized to match the others: at 56 the disc was visibly smaller than a
     // neutral bar. Wider box means wider coil spacing, so the stroke goes up
     // with it to hold the reference's 1:1 stroke-to-gap.
@@ -199,8 +234,8 @@ static const struct expression expressions[EXPR_COUNT] = {
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
 static const enum expr_id layer_expr[] = {
-    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_FRUSTRATED,
-    [3] = EXPR_DEADPAN, [4] = EXPR_SHOCK,
+    [0] = EXPR_NEUTRAL, [1] = EXPR_WINK,    [2] = EXPR_UNAMUSED,
+    [3] = EXPR_ANGRY,   [4] = EXPR_SHOCK,
 };
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
@@ -293,6 +328,100 @@ static void set_arc_points(struct zmk_widget_eyes_status *widget, int eye, int32
     lv_line_set_points(widget->line[eye], p, ARC_PTS);
 }
 
+// A switchback: the stroke runs the full width, folds back, and runs it again
+// slightly lower. Folding sideways rather than up and down is what makes it a
+// stack of overlapping near-horizontal strokes instead of a row of W's.
+static void set_zigzag_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                              int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2;
+    const int32_t drop = h - 2 * inset;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    for (int i = 0; i < ZIGZAG_PTS; i++) {
+        int32_t j = zigzag_jitter[(i + eye * 3) % ARRAY_SIZE(zigzag_jitter)];
+
+        // Right-hand points pull left, left-hand points push right: always
+        // inward, so nothing escapes the box.
+        p[i].x = (i % 2) ? (w - inset - j) : (inset + j);
+        p[i].y = top + inset + (drop * i) / (ZIGZAG_PTS - 1);
+    }
+
+    lv_line_set_points(widget->line[eye], p, ZIGZAG_PTS);
+}
+
+// A flat lid with a bowl hanging under its left end, the lid running on past
+// the bowl to the right. Drawn as a single unbroken stroke, so the lid and the
+// bowl's rim are the same line rather than separate pieces that have to meet.
+static void set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                           int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2 + inset;
+    const int32_t depth = h - 2 * inset;
+    const int32_t bowl = ((w - 2 * inset) * LID_BOWL_PCT) / 100;
+    const int32_t cx = inset + bowl / 2;
+    const int32_t rx = bowl / 2;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    // Lid's far end. The stroke runs from here leftward, so this segment lays
+    // down the whole lid before the bowl starts.
+    p[0].x = w - inset;
+    p[0].y = top;
+
+    for (int i = 0; i < LID_PTS - 1; i++) {
+        int32_t deg = (180 * i) / (LID_PTS - 2);
+        p[i + 1].x = cx - (rx * cos_of(deg)) / TRIG_MAX;
+        p[i + 1].y = top + (depth * sin_of(deg)) / TRIG_MAX;
+    }
+
+    lv_line_set_points(widget->line[eye], p, LID_PTS);
+}
+
+// A closed crescent: a straight lid slanting down toward the nose, closed off
+// by a curve bulging below it. Mirrored between the eyes, so both inner
+// corners are the low ones.
+static void set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w,
+                             int32_t box_h, int32_t inset) {
+    const int32_t h = scaled(box_h, widget->openness);
+    const int32_t top = (box_h - h) / 2 + inset;
+    const int32_t usable = h - 2 * inset;
+
+    const int32_t x_out = inset;
+    const int32_t x_in = w - inset;
+    const int32_t y_out = top;
+    const int32_t y_in = top + (usable * ANGRY_SLANT_PCT) / 100;
+    const int32_t bulge = (usable * ANGRY_BULGE_PCT) / 100;
+
+    const int32_t arc_n = ANGRY_PTS - 3;
+    lv_point_precise_t *p = widget->pts[eye];
+
+    p[0].x = x_out;
+    p[0].y = y_out;
+    p[1].x = x_in;
+    p[1].y = y_in;
+
+    // Back from the inner corner to the outer one, dipping below the chord.
+    for (int i = 0; i < arc_n; i++) {
+        int32_t num = i + 1;
+        int32_t den = arc_n + 1;
+        int32_t deg = (180 * num) / den;
+
+        p[2 + i].x = x_in + ((x_out - x_in) * num) / den;
+        p[2 + i].y = y_in + ((y_out - y_in) * num) / den + (bulge * sin_of(deg)) / TRIG_MAX;
+    }
+
+    p[ANGRY_PTS - 1] = p[0]; // close the crescent
+
+    // The right eye is the mirror image, so its outer corner is on the right.
+    if (eye == 1) {
+        for (int i = 0; i < ANGRY_PTS; i++) {
+            p[i].x = w - p[i].x;
+        }
+    }
+
+    lv_line_set_points(widget->line[eye], p, ANGRY_PTS);
+}
+
 static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, int32_t w, int32_t h,
                               int32_t inset) {
     const int32_t cx = w / 2;
@@ -351,12 +480,16 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
-        // Written unconditionally, not just on the branch that uses it. Setting
-        // it only inside the bar branch left a stale tilt on a hidden bar,
-        // which reappeared the next time that bar was shown by an expression
-        // that never asked to be rotated. Mirrored, so the pair tilts toward
-        // each other rather than both leaning the same way.
-        lv_obj_set_style_transform_rotation(widget->bar[i], i ? -e->rot : e->rot, LV_PART_MAIN);
+        // Written unconditionally on both objects, not just on the branch that
+        // uses it. Setting it only inside the bar branch left a stale tilt on a
+        // hidden bar, which reappeared the next time that bar was shown by an
+        // expression that never asked to be rotated. Mirrored, so the pair
+        // tilts toward each other rather than both leaning the same way.
+        int16_t rot = i ? -e->rot : e->rot;
+        lv_obj_set_style_transform_rotation(widget->bar[i], rot, LV_PART_MAIN);
+        lv_obj_set_style_transform_rotation(widget->line[i], rot, LV_PART_MAIN);
+        lv_obj_set_style_transform_pivot_x(widget->line[i], e->w / 2, LV_PART_MAIN);
+        lv_obj_set_style_transform_pivot_y(widget->line[i], box_h / 2, LV_PART_MAIN);
 
         // Same offset for both eyes, deliberately: this one shudders as a
         // pair rather than each eye going its own way.
@@ -384,6 +517,17 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
             lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
+
+            // Written both ways round, not just when outlining, so the style
+            // can't persist onto the next expression that uses this bar.
+            if (e->outline) {
+                lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_TRANSP, LV_PART_MAIN);
+                lv_obj_set_style_border_width(widget->bar[i], lw, LV_PART_MAIN);
+                lv_obj_set_style_border_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
+            } else {
+                lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
+                lv_obj_set_style_border_width(widget->bar[i], 0, LV_PART_MAIN);
+            }
             lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
             lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
@@ -396,6 +540,15 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         switch (shape) {
         case SHAPE_ARC_DOWN:
             set_arc_points(widget, i, e->w, box_h, inset);
+            break;
+        case SHAPE_ZIGZAG:
+            set_zigzag_points(widget, i, e->w, box_h, inset);
+            break;
+        case SHAPE_LIDDED:
+            set_lid_points(widget, i, e->w, box_h, inset);
+            break;
+        case SHAPE_ANGRY:
+            set_angry_points(widget, i, e->w, box_h, inset);
             break;
         case SHAPE_SPIRAL:
             set_spiral_points(widget, i, e->w, box_h, inset);
