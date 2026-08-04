@@ -50,7 +50,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define OPEN_FULL 256
 #define OPEN_SHUT 12
 
-#define BLINK_CLOSE_MS 70
+// A full frame at 12.5fps. Anything shorter can fall entirely between two
+// redraws, so the blink would be visible only some of the time - animations
+// keep stepping every 10ms, but the screen only samples them every 80.
+#define BLINK_CLOSE_MS 80
 #define BLINK_OPEN_MS 110
 #define BLINK_MIN_MS 2600
 #define BLINK_MAX_MS 6400
