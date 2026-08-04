@@ -1,5 +1,12 @@
 # ZMK Dongle Screen YADS (Yet another Dongle Screen)
 
+> **This is a fork.** It branches from upstream's `upgrade-4.1` (Zephyr 4.1 / LVGL 9) and adds an
+> animated eyes widget that replaces the layer label, along with a slimmer output widget and a
+> one-line battery indicator. See [Animated eyes](#animated-eyes) and
+> [Licensing](#licensing) — the bundled font is OFL, not MIT.
+>
+> Upstream: [janpfischer/zmk-dongle-screen](https://github.com/janpfischer/zmk-dongle-screen)
+
 This project provides a Zephyr module for a dongle display shield based on the ST7789V display and the Seeeduino XAIO BLE microcontroller and the LVGL graphics library.  
 The display can take advantage of a ambient light sensor to dim and brighten the display automatically.  
 It offers various widgets for current output, displaying layer, mod, WPM, and battery status, as well as brightness adjustments via keyboard, automatic dimming after inactivity, and a customizable status screen for ZMK-based keyboards.
@@ -273,10 +280,46 @@ west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dong
 
 _Note: a matching entry for `-DSHIELD` must already be present in your `build.yaml` in your configuration, which is given as the `-DZMK_CONFIG` argument._
 
-## License
+## Animated eyes
 
-MIT License
+Set `CONFIG_DONGLE_SCREEN_EYES_ACTIVE=y` (and `CONFIG_DONGLE_SCREEN_LAYER_ACTIVE=n`, or the layer
+label draws underneath) to replace the layer text with a pair of animated eyes.
+
+They are drawn as two white shapes on black — no sclera, so an eye is just its pupil. Every
+expression is either a rounded bar or an `lv_line` polyline, so the whole vocabulary needs two
+object types per eye and no image assets.
+
+Off the base layer, the expression reports the active layer. On the base layer the eyes follow
+activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
+20s; a strained squeeze past 40wpm; and dizzy spirals past 60. Every threshold releases well below
+where it triggers, since ZMK's WPM estimate bounces.
+
+Tuning lives in `#define`s at the top of `src/widgets/eyes_status.c`, and the expression-to-layer
+mapping is a single table.
+
+## Licensing
+
+The module is MIT, **except** the bundled font:
+
+| Path | Licence |
+| --- | --- |
+| Everything else | MIT |
+| `boards/shields/dongle_screen/src/fonts/Fredoka_Regular_20.c` | SIL OFL 1.1 |
+| `boards/shields/dongle_screen/src/fonts/Fredoka-OFL.txt` | the OFL licence text itself |
+
+[Fredoka](https://github.com/hafontia/Fredoka-One) is Copyright 2016 The Fredoka Project Authors,
+licensed under the SIL Open Font License 1.1. The OFL permits bundling with software under any
+licence and is not viral — it applies to the font file alone and leaves the rest of this module
+MIT. Fredoka carries no Reserved Font Name, so this converted copy may keep the name.
+
+If you redistribute this module, `Fredoka-OFL.txt` must travel with the font. That is the OFL's
+one substantive condition.
+
+The font was generated from the upstream variable font by instancing `wght=400 wdth=100` with
+`fontTools`, then converting with `lv_font_conv` at 20px / 4bpp, subset to digits, `A-Z`, space,
+`%` and lowercase `z`. Regenerate rather than hand-editing it.
 
 ---
 
-_This project is part of the ZMK community and licensed under the MIT License._
+_This project is part of the ZMK community. Code is MIT licensed; see Licensing above for the
+bundled font._
