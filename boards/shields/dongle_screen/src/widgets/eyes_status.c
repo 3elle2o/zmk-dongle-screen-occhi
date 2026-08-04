@@ -199,7 +199,12 @@ enum eye_shape {
 // 50%. Averaging the two lands at 60%: concave, but only slightly, which is
 // what the shape wants.
 #define SPARK_PTS 33
-#define SPARK_FILL_PCT 100 // tip reach, as a proportion of the eye's half-extent
+// Tip reach, as a proportion of the room inside the stroke. Measured against
+// that rather than against the contour because the outline is centred on the
+// contour and so covers half its width inward: tips taken all the way to the
+// contour get painted back in, which flattened the left and right ones against
+// the straight sides.
+#define SPARK_FILL_PCT 100
 #define SPARK_EDGE_W 2     // black outline, purely to anti-alias the hole's edge
 
 // Points along a shallow curve. A 3-point chevron would read as a hard V;
@@ -522,8 +527,8 @@ static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, in
     const int32_t ew = w - 2 * inset;
     const int32_t cx = inset + ew / 2;
     const int32_t cy = top + eh / 2;
-    const int32_t tip_x = (ew / 2) * SPARK_FILL_PCT / 100;
-    const int32_t tip_y = (eh / 2) * SPARK_FILL_PCT / 100;
+    const int32_t tip_x = (ew / 2 - inset) * SPARK_FILL_PCT / 100;
+    const int32_t tip_y = (eh / 2 - inset) * SPARK_FILL_PCT / 100;
     lv_point_precise_t *p = widget->pts[eye];
 
     int n = rounded_rect(p, inset, top, ew, eh, EYE_R);
