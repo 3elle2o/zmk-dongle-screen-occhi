@@ -37,7 +37,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define EYE_W 56
 #define EYE_H 76
 #define EYE_R 24
-#define EYE_DX 40 // each eye sits this far from centre
+// Each eye sits this far from centre, so the pair is 2x this apart. At 40 a
+// 56px-wide eye left only 24px between them, which read as crowded.
+#define EYE_DX 46
 
 // Default stroke for line shapes. Expressions can override it via line_w.
 #define LINE_W 14
@@ -209,12 +211,14 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Both morph in a single frame. These are the layer expressions, so they
     // want to land the instant the key goes down; the default 200ms is fine
     // for a mood drifting in, but reads as lag when it is answering a keypress.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H / 2, 0, 0, 0, false, 9, 8, 0, true,
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H / 2, 0, 0, 0, false, 9, 6, 0, true,
                        80},
     [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
     // Wider box means wider coil spacing, so the stroke goes up with it to
     // hold the reference's 1:1 stroke-to-gap.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 12},
+    // Can't take the full share of the widening: at 86px these are already
+    // the widest pair, and pushing them further reaches the case lip.
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 10, 8},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
