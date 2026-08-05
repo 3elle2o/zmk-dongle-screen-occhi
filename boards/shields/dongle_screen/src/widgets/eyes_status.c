@@ -948,6 +948,11 @@ static void zzz_timer_cb(lv_timer_t *timer) {
     if (widget->expr == EXPR_SLEEPY) {
         show_zzz(widget, true);
     }
+
+    // Fires once per sleep, but pause it rather than letting a repeat count
+    // expire: LVGL deletes a timer whose count runs out, and set_expression
+    // needs this one to still exist to re-arm it on the next sleep.
+    lv_timer_pause(timer);
 }
 
 static void morph_open(lv_anim_t *a) {
@@ -1300,8 +1305,13 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_timer_create(quirk_timer_cb, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS), widget);
     lv_timer_set_repeat_count(quirk_t, -1);
 
+    // Infinite like the rest, with the one-shot behaviour coming from the
+    // callback pausing itself. A repeat count of 1 looks like the natural way
+    // to say "once per sleep" and is a use-after-free: LVGL deletes the timer
+    // when the count reaches zero, so the z's showed up once per boot and the
+    // re-arm on every later sleep wrote to freed memory.
     zzz_timer = lv_timer_create(zzz_timer_cb, ZZZ_DELAY_MS, widget);
-    lv_timer_set_repeat_count(zzz_timer, 1);
+    lv_timer_set_repeat_count(zzz_timer, -1);
     lv_timer_pause(zzz_timer);
 
     sys_slist_append(&widgets, &widget->node);
