@@ -181,6 +181,17 @@ enum eye_shape {
 #define QUIRK_UP_PCT 116
 #define QUIRK_SMALL_PCT 62
 
+// The quirks draw hollow, which is what separates them from the resting face
+// at a glance: same silhouette, no ink inside. 8px reads clearly as a ring at
+// this size without closing up when a blink squashes it.
+#define QUIRK_OUTLINE_W 8
+
+// The small one breaks the pattern deliberately - a circle rather than
+// neutral's rounded rectangle, so it reads as the eyes going round rather than
+// merely shrinking. Sized off neutral's width so it stays proportional, which
+// lands it between shock's 24 and neutral's 56.
+#define QUIRK_SMALL_D (EYE_W * QUIRK_SMALL_PCT / 100)
+
 // A sparkle punched clean through the eye: centred, filling nearly its whole
 // height and width, sides bowed inward. Radius follows cos(2t) to the fourth,
 // which puts sharp tips on the axes and pinches between them. The tips are
@@ -266,6 +277,10 @@ struct expression {
     bool filled;      // line shapes only: fill the traced path solid
     int16_t morph_ms; // total time to blink into this expression; 0 = default
     bool no_blink;    // never blink in this expression
+    // Bar shapes only: draw hollow with a border this wide instead of a solid
+    // fill. LVGL insets a border, so an outlined eye occupies the same box as
+    // a solid one and nothing shifts. 0 means solid.
+    int16_t outline_w;
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -302,11 +317,17 @@ static const struct expression expressions[EXPR_COUNT] = {
     // resized rather than new shapes; the cropped one is neutral's own outline
     // with a flat slice off the top, so its curve is neutral's exactly.
     [EXPR_NEUTRAL_UP] = {SHAPE_BAR, EYE_W * QUIRK_UP_PCT / 100, EYE_H * QUIRK_UP_PCT / 100, 0, -7,
-                         EYE_R * QUIRK_UP_PCT / 100, false},
-    [EXPR_NEUTRAL_DOWN] = {SHAPE_CROPPED, EYE_W, EYE_H, 0, 7, 0, false, 9, 0, 0, true},
-    [EXPR_NEUTRAL_SMALL] = {SHAPE_BAR, EYE_W * QUIRK_SMALL_PCT / 100,
-                            EYE_H * QUIRK_SMALL_PCT / 100, 0, 0, EYE_R * QUIRK_SMALL_PCT / 100,
-                            false},
+                         EYE_R * QUIRK_UP_PCT / 100, false, .outline_w = QUIRK_OUTLINE_W},
+    // Hollow here means simply not filling the traced outline: the stroke that
+    // used to smooth the fill's stepped edge becomes the whole shape, so the
+    // sliced top stays exactly where it was.
+    [EXPR_NEUTRAL_DOWN] = {SHAPE_CROPPED, EYE_W, EYE_H, 0, 7, 0, false, QUIRK_OUTLINE_W, 0, 0,
+                           false},
+    // LV_RADIUS_CIRCLE rather than half the width, so it stays perfectly round
+    // at any size and turns into a lozenge rather than an odd rounded box when
+    // a blink squashes it.
+    [EXPR_NEUTRAL_SMALL] = {SHAPE_BAR, QUIRK_SMALL_D, QUIRK_SMALL_D, 0, 0, LV_RADIUS_CIRCLE, false,
+                            .outline_w = QUIRK_OUTLINE_W},
     // Cuts in at 80ms like the layer expressions rather than easing over the
     // default 200. Animations step at the refresh period, so a 200ms morph is
     // sampled about twice: the plain quirks survive that because a growing
@@ -803,6 +824,14 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
 
             lv_obj_set_size(widget->bar[i], e->w, h);
             lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
+
+            // Solid and hollow share one object, so both properties are written
+            // every time rather than only on the branch that wants them - the
+            // same trap the rotation fell into, where a value set on one
+            // expression survived onto the next one to use this bar.
+            lv_obj_set_style_bg_opa(widget->bar[i], e->outline_w ? LV_OPA_TRANSP : LV_OPA_COVER,
+                                    LV_PART_MAIN);
+            lv_obj_set_style_border_width(widget->bar[i], e->outline_w, LV_PART_MAIN);
             lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
             lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
             lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
@@ -1291,6 +1320,10 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_remove_style_all(widget->bar[i]);
         lv_obj_set_style_bg_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
+        // Colour and opacity set once; only the width varies per expression,
+        // and a width of zero draws nothing.
+        lv_obj_set_style_border_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_border_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_SCROLLABLE);
 
         // Created before the line so it sits underneath it: the fill supplies
