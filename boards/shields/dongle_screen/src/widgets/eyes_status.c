@@ -290,8 +290,8 @@ enum eye_shape {
 // Rare transient variations on the resting face: a quirk timer swaps one in
 // for a couple of seconds, then back. Scale factors are applied to width,
 // height and radius alike so the silhouette stays neutral's, just resized.
-#define QUIRK_MIN_MS 50000
-#define QUIRK_MAX_MS 100000
+#define QUIRK_MIN_MS 40000
+#define QUIRK_MAX_MS 90000
 #define QUIRK_HOLD_MS 2200
 #define QUIRK_UP_PCT 116
 #define QUIRK_SMALL_PCT 62
@@ -1615,10 +1615,13 @@ static void quirk_timer_cb(lv_timer_t *timer) {
     if (quirk != EXPR_NONE) {
         quirk = EXPR_NONE;
         lv_timer_set_period(timer, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS));
-    } else if (widget->idle) {
-        // Don't arm one while asleep. resolve() would suppress it anyway -
-        // idle returns before the quirk is consulted - but arming it here
-        // would mean waking up mid-quirk for no reason.
+    } else if (widget->idle || wpm_level > 0) {
+        // Don't arm one that cannot be seen. resolve() suppresses a quirk while
+        // asleep or while typing hard enough to be squeezing, so arming it here
+        // would spend the turn on something invisible and then wait the full
+        // interval again - quirks came out rarer during heavy use than the
+        // interval suggests. wpm_level is the same value resolve() consults, so
+        // this cannot drift out of step with it.
         lv_timer_set_period(timer, rnd_range(QUIRK_MIN_MS, QUIRK_MAX_MS));
     } else {
         quirk = quirks[rnd() % ARRAY_SIZE(quirks)];
