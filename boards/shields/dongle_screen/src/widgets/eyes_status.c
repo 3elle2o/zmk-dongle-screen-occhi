@@ -111,7 +111,20 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define WPM_ALERT_ON 5
 #define WPM_ALERT_OFF 2
 #define ALERT_HOLD_MS 600
-#define ALERT_FADE_MS 400
+
+// Said on power-up and again whenever activity resumes after idling.
+#define DIALOGUE_WAKE "im awake now"
+#define WAKE_HOLD_MS 1800
+
+#define DIALOGUE_FADE_MS 400
+// Breathing room inside the black plate, so glyphs are not flush to its edge.
+#define DIALOGUE_PAD 3
+
+// A line already being spoken is not interrupted by a lower-ranked one. The
+// typing "!" is redundant on the heels of waking up, and cutting a sentence
+// short to say it reads worse than not saying it at all.
+#define DIALOGUE_PRIO_ALERT 0
+#define DIALOGUE_PRIO_WAKE 1
 
 // Dialogue: everything the buddy says beside its face - the sleep z's, the
 // typing "!", and whatever comes later.
@@ -1036,35 +1049,52 @@ static void set_idle_motion(struct zmk_widget_eyes_status *widget) {
     }
 }
 
-// Shared by the sleep z's and the alert: both only ever fade an object.
+// Shared by the sleep z's and the spoken line: both only ever fade an object.
+// Object-level opacity, so the black plate fades with the text on it rather
+// than leaving a rectangle behind.
 static void fade_anim_opa(void *var, int32_t v) {
     lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, LV_PART_MAIN);
 }
 
-static void alert_done(lv_anim_t *a) { lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN); }
+static void dialogue_done(lv_anim_t *a) { lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN); }
 
-// Hold at full opacity, then fade out and hide. One animation rather than a
-// timer plus an animation: the completion callback is the only thing that has
-// to run, and re-firing simply replaces it, which restarts the hold.
+// Rank of the line currently being spoken. Only meaningful while its animation
+// is still running, which is also how "still speaking" is decided.
+static uint8_t dialogue_prio;
+
+// Say one line: show it, hold at full opacity, then fade out and hide. One
+// animation rather than a timer plus an animation, because the completion
+// callback is the only thing that has to run, and speaking again simply
+// replaces it rather than stacking.
 //
-// Nothing else takes it down. Dialogue is independent of the face, so this
-// runs its course whatever the eyes do in the meantime - it sits above them
-// and no longer collides with anything.
-static void fire_alert(struct zmk_widget_eyes_status *widget) {
-    lv_obj_t *o = widget->alert;
+// Nothing external takes it down. Dialogue is independent of the face, so a
+// line runs its course whatever the eyes do in the meantime.
+static void say(struct zmk_widget_eyes_status *widget, const char *text, uint32_t hold_ms,
+                uint8_t prio) {
+    lv_obj_t *o = widget->dialogue;
+
+    // An animation still running means a line is still being spoken.
+    if (lv_anim_get(o, fade_anim_opa) != NULL && prio < dialogue_prio) {
+        return;
+    }
+    dialogue_prio = prio;
 
     lv_anim_delete(o, fade_anim_opa);
+    lv_label_set_text(o, text);
     lv_obj_set_style_opa(o, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    // Above the eyes wherever the two meet. apply_geometry raises the twinkle's
+    // cut-out on every pass, so being created later is not enough on its own.
+    lv_obj_move_foreground(o);
 
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, o);
     lv_anim_set_exec_cb(&a, fade_anim_opa);
     lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_delay(&a, ALERT_HOLD_MS);
-    lv_anim_set_time(&a, ALERT_FADE_MS);
-    lv_anim_set_completed_cb(&a, alert_done);
+    lv_anim_set_delay(&a, hold_ms);
+    lv_anim_set_time(&a, DIALOGUE_FADE_MS);
+    lv_anim_set_completed_cb(&a, dialogue_done);
     lv_anim_start(&a);
 }
 
@@ -1072,6 +1102,8 @@ static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
     for (int i = 0; i < 3; i++) {
         if (show) {
             lv_obj_remove_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
+            // Dialogue sits above the face wherever they meet.
+            lv_obj_move_foreground(widget->zzz[i]);
         } else {
             lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
         }
@@ -1294,7 +1326,7 @@ static bool alert_armed;
 static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
     if (!alert_armed && wpm >= WPM_ALERT_ON) {
         alert_armed = true;
-        fire_alert(widget);
+        say(widget, "!", ALERT_HOLD_MS, DIALOGUE_PRIO_ALERT);
     } else if (alert_armed && wpm <= WPM_ALERT_OFF) {
         alert_armed = false;
     }
@@ -1303,9 +1335,21 @@ static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
 static void eyes_update_cb(struct eyes_state state) {
     struct zmk_widget_eyes_status *widget;
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
+        // Edge, not level: said once on the way out of idle rather than for as
+        // long as the keyboard stays awake. widget->idle starts false, so the
+        // listener's own initial call cannot mistake boot for a wake - the
+        // greeting at power-up is spoken explicitly instead.
+        bool waking = widget->idle && !state.idle;
         widget->idle = state.idle;
+
         set_expression(widget, resolve(state));
         update_alert(widget, state.wpm);
+
+        // Last, so it outranks the "!" that the same keypress is about to
+        // trigger as the typing speed climbs past the threshold.
+        if (waking) {
+            say(widget, DIALOGUE_WAKE, WAKE_HOLD_MS, DIALOGUE_PRIO_WAKE);
+        }
     }
 }
 
@@ -1346,14 +1390,21 @@ ZMK_SUBSCRIPTION(widget_eyes_status, zmk_activity_state_changed);
 
 static void zzz_anim_y(void *var, int32_t v) { lv_obj_set_y((lv_obj_t *)var, v); }
 
-static void init_alert(struct zmk_widget_eyes_status *widget) {
-    widget->alert = lv_label_create(widget->obj);
-    lv_label_set_text(widget->alert, "!");
-    lv_obj_set_style_text_font(widget->alert, &Fredoka_SemiBold_20, LV_PART_MAIN);
-    lv_obj_set_style_text_color(widget->alert, lv_color_white(), LV_PART_MAIN);
+static void init_dialogue(struct zmk_widget_eyes_status *widget) {
+    widget->dialogue = lv_label_create(widget->obj);
+    lv_obj_set_style_text_font(widget->dialogue, &Fredoka_SemiBold_20, LV_PART_MAIN);
+    lv_obj_set_style_text_color(widget->dialogue, lv_color_white(), LV_PART_MAIN);
+
+    // An opaque plate, so a line stays legible over whatever it crosses rather
+    // than tangling with the eyes behind it. Invisible against the screen
+    // itself, which is black too.
+    lv_obj_set_style_bg_color(widget->dialogue, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(widget->dialogue, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(widget->dialogue, DIALOGUE_PAD, LV_PART_MAIN);
+
     // Right edge pinned, so a longer string extends leftward from here.
-    lv_obj_align(widget->alert, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, DIALOGUE_TOP);
-    lv_obj_add_flag(widget->alert, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(widget->dialogue, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, DIALOGUE_TOP);
+    lv_obj_add_flag(widget->dialogue, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void init_zzz(struct zmk_widget_eyes_status *widget) {
@@ -1369,6 +1420,9 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_label_set_text(widget->zzz[i], "z");
         lv_obj_set_style_text_font(widget->zzz[i], &Fredoka_SemiBold_20, LV_PART_MAIN);
         lv_obj_set_style_text_color(widget->zzz[i], lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(widget->zzz[i], lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(widget->zzz[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(widget->zzz[i], DIALOGUE_PAD, LV_PART_MAIN);
         lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i],
                      DIALOGUE_TOP + zy[i]);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
@@ -1442,7 +1496,7 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     }
 
     init_zzz(widget);
-    init_alert(widget);
+    init_dialogue(widget);
 
     widget->expr = EXPR_NEUTRAL;
     widget->pending_expr = EXPR_NEUTRAL;
@@ -1482,6 +1536,11 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     sys_slist_append(&widgets, &widget->node);
 
     widget_eyes_status_init();
+
+    // The greeting at power-up. After the listener's own initial update, which
+    // would otherwise draw the face over a line already being spoken.
+    say(widget, DIALOGUE_WAKE, WAKE_HOLD_MS, DIALOGUE_PRIO_WAKE);
+
     return 0;
 }
 
