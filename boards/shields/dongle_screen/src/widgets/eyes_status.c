@@ -122,13 +122,20 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 //
 // Line breaks are written in, not wrapped automatically: each line gets its own
 // label so its background can hug its own text, and the author is better placed
-// than a wrap routine to decide where a remark should break. Budget is about
-// twenty characters a line before it runs past the widget and gets clipped.
+// than a wrap routine to decide where a remark should break.
+//
+// A line has 210px to work with before it runs past the widget and is clipped,
+// which is a little over twenty lowercase characters. Nothing warns about
+// overrunning it, so measure a long one rather than counting on the estimate.
+//
+// The font carries no punctuation beyond "!" - a comma or a full stop would
+// render as nothing at all - so lines are written without it.
 
 // Power-up, and every return from idle.
 static const char *const DIALOGUE_WAKE[] = {
     "im awake now",
     "hello there",
+    "why are we still here\njust to suffer",
 };
 
 // Typing has started.
