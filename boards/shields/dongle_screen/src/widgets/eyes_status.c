@@ -43,7 +43,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // box simply reaches further up and down around them. The lower half goes
 // unused, which costs nothing - the object is transparent and its children sit
 // where they are told.
-#define EYES_H 200
+// 220 puts the top of the box exactly on the top of the screen: the widget is
+// centred with a 10px lift on a 240px-tall panel, so this is as much room above
+// the eyes as there is to have. Anything more would hang off the top and be
+// clipped by the screen rather than gaining anything.
+#define EYES_H 220
 
 #define EYE_W 56
 #define EYE_H 76
@@ -149,8 +153,8 @@ static const char *const DIALOGUE_NAG[] = {
 #define DIALOGUE_FADE_MS 400
 // Drifts up as it goes, so a remark leaves rather than simply stopping being
 // there. Small: the point is a suggestion of movement under the fade, not a
-// journey. Well inside DIALOGUE_TOP, so the topmost line cannot climb out of
-// the widget and be clipped on its way.
+// journey. Small enough that even a full two lines, which already reach close
+// to the top of the screen, do not climb off it on the way out.
 #define DIALOGUE_RISE 10
 
 // Revealed a few characters at a time, like a visual novel. Animations step at
@@ -185,7 +189,17 @@ static const char *const DIALOGUE_NAG[] = {
 // does not answer to one: an expression changing no longer clears it, and each
 // piece is responsible for its own lifetime.
 #define DIALOGUE_RIGHT 4
-#define DIALOGUE_TOP 16
+
+// Dialogue grows upward from a fixed baseline: the last line always lands here
+// and earlier ones stack above it. A remark therefore expands into the empty
+// band over the eyes rather than down across them, and its final line sits in
+// the same place whether it is one line or two.
+//
+// 62 is the lowest value that leaves room for two lines plus the drift on the
+// way out, given the box now starts at the top of the screen. It puts the
+// bottom of a plate a few pixels into the top of the eyes, which the plate
+// covers.
+#define DIALOGUE_BOTTOM 62
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
@@ -233,9 +247,9 @@ static const char *const DIALOGUE_NAG[] = {
 // "actually asleep" stage is timed locally.
 #define ZZZ_DELAY_MS 20000
 #define ZZZ_CYCLE_MS 1800
-// Shortened along with the move up: the topmost z rises from DIALOGUE_TOP, and
-// anything taller than that offset would carry it off the top of the widget,
-// where it would simply be clipped away.
+// The z's climb from the bottom slot, so the highest of them starts a line and
+// a bit above the baseline. Kept short so that rise does not carry it past the
+// top of the screen, where it would simply be clipped away.
 #define ZZZ_RISE 12
 
 enum eye_shape {
@@ -1133,15 +1147,26 @@ static uint8_t dialogue_prio;
 static const char *dialogue_text;
 
 // Height of one line's plate, measured from the font at init. Kept here because
-// the rise needs it to work out where each line started from.
+// the placement needs it to work out where each line sits.
 static int16_t dialogue_line_h;
+
+// The line currently taking characters. Placement keys off this rather than off
+// the total, which is what makes a remark scroll: the active line always holds
+// the bottom slot, and each earlier line has been pushed up one slot per line
+// that followed it. So a second line does not appear below the first - the
+// first rises out of the way and the second is typed where it was.
+static int dialogue_active;
+
+static int16_t dialogue_line_y(int i) {
+    return (int16_t)(DIALOGUE_BOTTOM - (dialogue_active - i + 1) * dialogue_line_h);
+}
 
 // Lifts every line together on the way out. A separate callback from the fade
 // so the two run as one movement without either replacing the other.
 static void dialogue_rise_cb(void *var, int32_t rise) {
     struct zmk_widget_eyes_status *widget = var;
     for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
-        lv_obj_set_y(widget->dialogue[i], DIALOGUE_TOP + i * dialogue_line_h - rise);
+        lv_obj_set_y(widget->dialogue[i], dialogue_line_y(i) - (int16_t)rise);
     }
 }
 
@@ -1151,6 +1176,24 @@ static void dialogue_rise_cb(void *var, int32_t rise) {
 // place.
 static void dialogue_reveal_cb(void *var, int32_t shown) {
     struct zmk_widget_eyes_status *widget = var;
+
+    // Found before anything is placed, because every line's position is
+    // measured from it.
+    dialogue_active = 0;
+    {
+        int left = shown;
+        int i = 0;
+        for (const char *p = dialogue_text; *p && i < DIALOGUE_MAX_LINES; i++) {
+            const char *nl = strchr(p, '\n');
+            int len = nl ? (int)(nl - p) : (int)strlen(p);
+            if (left > 0) {
+                dialogue_active = i;
+            }
+            left -= len;
+            p = nl ? nl + 1 : p + len;
+        }
+    }
+
     int remaining = shown;
     int line = 0;
 
@@ -1160,6 +1203,9 @@ static void dialogue_reveal_cb(void *var, int32_t shown) {
         int show = remaining <= 0 ? 0 : MIN(remaining, len);
 
         lv_obj_t *o = widget->dialogue[line];
+        // Re-placed every step: the slot a line occupies changes the moment the
+        // next one starts.
+        lv_obj_set_y(o, dialogue_line_y(line));
         if (show > 0) {
             lv_label_set_text_fmt(o, "%.*s", show, p);
             // Raised only on the way out of hidden. Doing it every step would
@@ -1202,19 +1248,20 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
     lv_anim_delete(widget, dialogue_reveal_cb);
     lv_anim_delete(widget, dialogue_rise_cb);
 
-    // Back down to where lines start. Interrupting a remark part-way through
-    // its exit would otherwise leave the next one hanging where that one had
-    // drifted to.
-    dialogue_rise_cb(widget, 0);
-
     dialogue_text = text;
 
-    // Newlines are breaks, not characters, so they do not take a beat of their
-    // own during the reveal.
+    // Newlines are breaks rather than characters and take no beat of their own.
+    // Counted a line at a time so anything past the last slot is left out of
+    // the total too, rather than the reveal spending time on text that will
+    // never be shown.
     int total = 0;
-    for (const char *p = text; *p; p++) {
-        if (*p != '\n') {
-            total++;
+    {
+        int i = 0;
+        for (const char *p = text; *p && i < DIALOGUE_MAX_LINES; i++) {
+            const char *nl = strchr(p, '\n');
+            int len = nl ? (int)(nl - p) : (int)strlen(p);
+            total += len;
+            p = nl ? nl + 1 : p + len;
         }
     }
 
@@ -1223,6 +1270,10 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
     for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
         lv_obj_set_style_opa(widget->dialogue[i], LV_OPA_COVER, LV_PART_MAIN);
     }
+
+    // Places everything back at the start, which also undoes any drift left by
+    // a remark this one cut short - that would otherwise leave the next hanging
+    // where the last had floated to.
     dialogue_reveal_cb(widget, 0);
 
     const uint32_t reveal_ms = MIN((uint32_t)total * REVEAL_MS_PER_CHAR, REVEAL_MAX_MS);
@@ -1619,8 +1670,9 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
         lv_obj_set_width(o, LV_SIZE_CONTENT);
 
         // Right edges flush to a common margin, so lines stack against it and
-        // each grows leftward into empty space.
-        lv_obj_align(o, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, DIALOGUE_TOP + i * line_h);
+        // each grows leftward into empty space. The vertical offset is set per
+        // remark, since it depends on how many lines that remark has.
+        lv_obj_align(o, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, dialogue_line_y(i));
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -1630,8 +1682,11 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
     // same top-right anchor the rest of the dialogue uses. The last one sits on
     // the anchor itself and the others trail down and to the left, so the group
     // keeps its diagonal while staying inside the band above the eyes.
+    // Offsets up and to the right of the bottom slot, the same place a
+    // one-line remark is typed. The first z sits on that baseline and the
+    // others climb away from it.
     static const int16_t zx[3] = {-26, -13, 0};
-    static const int16_t zy[3] = {8, 4, 0};
+    static const int16_t zy[3] = {0, 4, 8};
 
     for (int i = 0; i < 3; i++) {
         widget->zzz[i] = lv_label_create(widget->obj);
@@ -1642,7 +1697,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_obj_set_style_bg_opa(widget->zzz[i], LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_pad_all(widget->zzz[i], DIALOGUE_PAD, LV_PART_MAIN);
         lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i],
-                     DIALOGUE_TOP + zy[i]);
+                     DIALOGUE_BOTTOM - dialogue_line_h - zy[i]);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
 
         int16_t base = lv_obj_get_y(widget->zzz[i]);
@@ -1713,8 +1768,10 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
         lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
     }
 
-    init_zzz(widget);
+    // Dialogue first: it measures the line height that the z's are placed
+    // against.
     init_dialogue(widget);
+    init_zzz(widget);
 
     widget->expr = EXPR_NEUTRAL;
     widget->pending_expr = EXPR_NEUTRAL;

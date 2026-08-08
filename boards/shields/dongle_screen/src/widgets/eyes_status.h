@@ -14,7 +14,11 @@
 // Lines a single piece of dialogue may occupy. Breaks are written into the
 // strings themselves rather than wrapped automatically, so anything past this
 // is an authoring mistake and is simply dropped.
-#define DIALOGUE_MAX_LINES 3
+//
+// Two is what the panel has room for. A plate is 26px and the band above the
+// eyes is about 62, which two lines fill exactly once the drift on the way out
+// is accounted for. A third would start off the top of the screen.
+#define DIALOGUE_MAX_LINES 2
 
 // Each eye owns both a bar and a line object. Expressions swap which one is
 // visible rather than creating and deleting objects on the display thread.
