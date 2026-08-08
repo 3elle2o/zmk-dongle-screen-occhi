@@ -141,6 +141,7 @@ static const char *const DIALOGUE_WAKE[] = {
 // Typing has started.
 static const char *const DIALOGUE_ALERT[] = {
     "!",
+    "waow",
 };
 
 // Impatience, once typing has stopped for a while. Rolled each time typing
