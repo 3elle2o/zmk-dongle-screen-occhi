@@ -149,9 +149,14 @@ static const char *const DIALOGUE_ALERT[] = {
 // chance at a remark and not a stream of them.
 static const char *const DIALOGUE_NAG[] = {
     "are u gonna start\ntyping or what",
+    "im hungry",
+    "what now",
 };
-#define NAG_DELAY_MS 15000
-#define NAG_CHANCE_PCT 20
+// A fresh delay is drawn for each pause rather than always landing on the same
+// beat, so it does not read as a countdown you can predict.
+#define NAG_MIN_MS 5000
+#define NAG_MAX_MS 25000
+#define NAG_CHANCE_PCT 60
 
 // How long a finished remark sits before it starts to go. One number for every
 // line, not one per line: because text is revealed as it is written, a long
@@ -1587,9 +1592,9 @@ static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
 
         // Typing stopped: arm the one remark this pause is allowed. Re-armed on
         // the falling edge only, so a pause that lasts an hour still gets a
-        // single roll rather than one every fifteen seconds.
+        // single roll rather than one every time the delay elapses.
         if (nag_timer) {
-            lv_timer_set_period(nag_timer, NAG_DELAY_MS);
+            lv_timer_set_period(nag_timer, (uint32_t)rnd_range(NAG_MIN_MS, NAG_MAX_MS));
             lv_timer_reset(nag_timer);
             lv_timer_resume(nag_timer);
         }
@@ -1818,7 +1823,9 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
 
     // Same shape as the z's timer, and for the same reason: infinite repeat,
     // paused by its own callback, so it is still there to re-arm.
-    nag_timer = lv_timer_create(nag_timer_cb, NAG_DELAY_MS, widget);
+    // Period is a placeholder: it is paused immediately and gets a freshly
+    // drawn delay each time typing stops.
+    nag_timer = lv_timer_create(nag_timer_cb, NAG_MIN_MS, widget);
     lv_timer_set_repeat_count(nag_timer, -1);
     lv_timer_pause(nag_timer);
 
