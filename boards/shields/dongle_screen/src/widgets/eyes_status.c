@@ -147,6 +147,11 @@ static const char *const DIALOGUE_NAG[] = {
 // dwell at the end than a short one does.
 #define DIALOGUE_HOLD_MS 1200
 #define DIALOGUE_FADE_MS 400
+// Drifts up as it goes, so a remark leaves rather than simply stopping being
+// there. Small: the point is a suggestion of movement under the fade, not a
+// journey. Well inside DIALOGUE_TOP, so the topmost line cannot climb out of
+// the widget and be clipped on its way.
+#define DIALOGUE_RISE 10
 
 // Revealed a few characters at a time, like a visual novel. Animations step at
 // the refresh period, so this lands in a handful of frames rather than one
@@ -1127,6 +1132,19 @@ static uint8_t dialogue_prio;
 // holding a pointer to it is safe for as long as the animation runs.
 static const char *dialogue_text;
 
+// Height of one line's plate, measured from the font at init. Kept here because
+// the rise needs it to work out where each line started from.
+static int16_t dialogue_line_h;
+
+// Lifts every line together on the way out. A separate callback from the fade
+// so the two run as one movement without either replacing the other.
+static void dialogue_rise_cb(void *var, int32_t rise) {
+    struct zmk_widget_eyes_status *widget = var;
+    for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
+        lv_obj_set_y(widget->dialogue[i], DIALOGUE_TOP + i * dialogue_line_h - rise);
+    }
+}
+
 // Fills each line with as much of its text as has been revealed so far. Walks
 // the whole remark every step rather than tracking a position, which costs
 // nothing at these lengths and keeps the mapping from count to screen in one
@@ -1182,6 +1200,12 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
 
     lv_anim_delete(widget, dialogue_fade_cb);
     lv_anim_delete(widget, dialogue_reveal_cb);
+    lv_anim_delete(widget, dialogue_rise_cb);
+
+    // Back down to where lines start. Interrupting a remark part-way through
+    // its exit would otherwise leave the next one hanging where that one had
+    // drifted to.
+    dialogue_rise_cb(widget, 0);
 
     dialogue_text = text;
 
@@ -1223,6 +1247,18 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
     lv_anim_set_time(&a, DIALOGUE_FADE_MS);
     lv_anim_set_completed_cb(&a, dialogue_done);
     lv_anim_start(&a);
+
+    // Rides alongside the fade on the same schedule. Eased out, so it lifts
+    // away and settles rather than travelling at a constant rate to a stop.
+    lv_anim_t u;
+    lv_anim_init(&u);
+    lv_anim_set_var(&u, widget);
+    lv_anim_set_exec_cb(&u, dialogue_rise_cb);
+    lv_anim_set_values(&u, 0, DIALOGUE_RISE);
+    lv_anim_set_delay(&u, reveal_ms + DIALOGUE_HOLD_MS);
+    lv_anim_set_time(&u, DIALOGUE_FADE_MS);
+    lv_anim_set_path_cb(&u, lv_anim_path_ease_out);
+    lv_anim_start(&u);
 }
 
 // Picks one of an event's lines at random. Adding a variation is a line in the
@@ -1564,6 +1600,7 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
     // padding, and stacking by exactly that keeps consecutive lines touching
     // without either a gap between them or an overlap.
     const int16_t line_h = lv_font_get_line_height(&Fredoka_SemiBold_20) + 2 * DIALOGUE_PAD;
+    dialogue_line_h = line_h;
 
     for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
         lv_obj_t *o = lv_label_create(widget->obj);
