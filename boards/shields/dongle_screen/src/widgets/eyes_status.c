@@ -90,10 +90,21 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 // ZMK's WPM is a rolling estimate and bounces, so each threshold releases
 // well below where it triggers.
-#define WPM_SQUEEZE_ON 40
-#define WPM_SQUEEZE_OFF 33
+#define WPM_SQUEEZE_ON 50
+#define WPM_SQUEEZE_OFF 43
 #define WPM_CONFUSED_ON 80
 #define WPM_CONFUSED_OFF 72
+
+// A "!" that pops up the moment typing starts, then takes itself away. Not a
+// state like the expressions - a reaction, so it fires on the way past 5wpm
+// rather than for as long as the figure sits above it, and releases low enough
+// that a pause has to be real before it can fire again.
+#define WPM_ALERT_ON 5
+#define WPM_ALERT_OFF 2
+#define ALERT_HOLD_MS 600
+#define ALERT_FADE_MS 400
+#define ALERT_X 78
+#define ALERT_Y -22
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
@@ -1002,6 +1013,39 @@ static void set_idle_motion(struct zmk_widget_eyes_status *widget) {
     }
 }
 
+// Shared by the sleep z's and the alert: both only ever fade an object.
+static void fade_anim_opa(void *var, int32_t v) {
+    lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, LV_PART_MAIN);
+}
+
+static void alert_done(lv_anim_t *a) { lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN); }
+
+static void hide_alert(struct zmk_widget_eyes_status *widget) {
+    lv_anim_delete(widget->alert, fade_anim_opa);
+    lv_obj_add_flag(widget->alert, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Hold at full opacity, then fade out and hide. One animation rather than a
+// timer plus an animation: the completion callback is the only thing that has
+// to run, and re-firing simply replaces it, which restarts the hold.
+static void fire_alert(struct zmk_widget_eyes_status *widget) {
+    lv_obj_t *o = widget->alert;
+
+    lv_anim_delete(o, fade_anim_opa);
+    lv_obj_set_style_opa(o, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, o);
+    lv_anim_set_exec_cb(&a, fade_anim_opa);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_delay(&a, ALERT_HOLD_MS);
+    lv_anim_set_time(&a, ALERT_FADE_MS);
+    lv_anim_set_completed_cb(&a, alert_done);
+    lv_anim_start(&a);
+}
+
 static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
     for (int i = 0; i < 3; i++) {
         if (show) {
@@ -1063,6 +1107,12 @@ static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id i
     }
 
     widget->pending_expr = id;
+
+    // Any real change of face takes the alert with it - squeezed arriving while
+    // it is still up would otherwise leave a "!" hanging over a different
+    // expression than the one it reacted to. Only past the early return above,
+    // so a no-op call does not cut it short.
+    hide_alert(widget);
 
     if (id != EXPR_SLEEPY) {
         show_zzz(widget, false);
@@ -1220,11 +1270,30 @@ static enum expr_id resolve(struct eyes_state state) {
     }
 }
 
+// Edge-triggered, so the "!" fires once when typing starts rather than on every
+// wpm report while it stays above the line. Releasing well below the trigger
+// means a genuine pause has to happen before it can fire again.
+static bool alert_armed;
+
+static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
+    if (!alert_armed && wpm >= WPM_ALERT_ON) {
+        alert_armed = true;
+        fire_alert(widget);
+    } else if (alert_armed && wpm <= WPM_ALERT_OFF) {
+        alert_armed = false;
+    }
+}
+
 static void eyes_update_cb(struct eyes_state state) {
     struct zmk_widget_eyes_status *widget;
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
         widget->idle = state.idle;
         set_expression(widget, resolve(state));
+
+        // After the expression, deliberately. Typing starts both at once -
+        // waking the face from sleepy and crossing the alert threshold - and
+        // set_expression clears the alert, so firing first would lose it.
+        update_alert(widget, state.wpm);
     }
 }
 
@@ -1263,11 +1332,16 @@ ZMK_SUBSCRIPTION(widget_eyes_status, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(widget_eyes_status, zmk_wpm_state_changed);
 ZMK_SUBSCRIPTION(widget_eyes_status, zmk_activity_state_changed);
 
-static void zzz_anim_opa(void *var, int32_t v) {
-    lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, LV_PART_MAIN);
-}
-
 static void zzz_anim_y(void *var, int32_t v) { lv_obj_set_y((lv_obj_t *)var, v); }
+
+static void init_alert(struct zmk_widget_eyes_status *widget) {
+    widget->alert = lv_label_create(widget->obj);
+    lv_label_set_text(widget->alert, "!");
+    lv_obj_set_style_text_font(widget->alert, &Fredoka_SemiBold_20, LV_PART_MAIN);
+    lv_obj_set_style_text_color(widget->alert, lv_color_white(), LV_PART_MAIN);
+    lv_obj_align(widget->alert, LV_ALIGN_CENTER, ALERT_X, ALERT_Y);
+    lv_obj_add_flag(widget->alert, LV_OBJ_FLAG_HIDDEN);
+}
 
 static void init_zzz(struct zmk_widget_eyes_status *widget) {
     // Staggered so they read as a sequence rather than a pulse.
@@ -1288,7 +1362,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_anim_t o;
         lv_anim_init(&o);
         lv_anim_set_var(&o, widget->zzz[i]);
-        lv_anim_set_exec_cb(&o, zzz_anim_opa);
+        lv_anim_set_exec_cb(&o, fade_anim_opa);
         lv_anim_set_values(&o, LV_OPA_TRANSP, LV_OPA_COVER);
         lv_anim_set_time(&o, ZZZ_CYCLE_MS / 2);
         lv_anim_set_playback_time(&o, ZZZ_CYCLE_MS / 2);
@@ -1351,6 +1425,7 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     }
 
     init_zzz(widget);
+    init_alert(widget);
 
     widget->expr = EXPR_NEUTRAL;
     widget->pending_expr = EXPR_NEUTRAL;

@@ -21,7 +21,8 @@ struct zmk_widget_eyes_status {
     lv_obj_t *hole[2]; // black outline for the twinkle's cut-out sparkle
     lv_obj_t *fill[2];  // canvas under the outline, for shapes drawn solid
     lv_point_precise_t pts[2][EYE_MAX_PTS];
-    lv_obj_t *zzz[3]; // drift up and fade once idle has gone on a while
+    lv_obj_t *zzz[3];  // drift up and fade once idle has gone on a while
+    lv_obj_t *alert;   // one-shot "!" when typing starts, fades on its own
 
     uint8_t expr;
     uint8_t pending_expr; // expression to adopt at the bottom of a transition
