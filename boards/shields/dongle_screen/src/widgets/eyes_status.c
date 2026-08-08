@@ -32,7 +32,16 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <fonts.h>
 
 #define EYES_W 220
-#define EYES_H 120
+// Tall enough to carry a band of dialogue above the eyes as well as the eyes
+// themselves. Children are clipped to their parent's box, so this height is
+// what dialogue has to live inside - it was 120, which left the sleep z's
+// almost touching the ceiling.
+//
+// Grown symmetrically and the eyes are centred in it, so they do not move: the
+// box simply reaches further up and down around them. The lower half goes
+// unused, which costs nothing - the object is transparent and its children sit
+// where they are told.
+#define EYES_H 200
 
 #define EYE_W 56
 #define EYE_H 76
@@ -103,8 +112,19 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define WPM_ALERT_OFF 2
 #define ALERT_HOLD_MS 600
 #define ALERT_FADE_MS 400
-#define ALERT_X 78
-#define ALERT_Y -22
+
+// Dialogue: everything the buddy says beside its face - the sleep z's, the
+// typing "!", and whatever comes later.
+//
+// Anchored to the top right of the widget rather than at an offset from its
+// centre, so a longer line grows leftward into empty space instead of across
+// the eyes, and sits in the band above them either way.
+//
+// It is otherwise independent of the face. Dialogue is not an expression and
+// does not answer to one: an expression changing no longer clears it, and each
+// piece is responsible for its own lifetime.
+#define DIALOGUE_RIGHT 4
+#define DIALOGUE_TOP 16
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
@@ -152,7 +172,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // "actually asleep" stage is timed locally.
 #define ZZZ_DELAY_MS 20000
 #define ZZZ_CYCLE_MS 1800
-#define ZZZ_RISE 16
+// Shortened along with the move up: the topmost z rises from DIALOGUE_TOP, and
+// anything taller than that offset would carry it off the top of the widget,
+// where it would simply be clipped away.
+#define ZZZ_RISE 12
 
 enum eye_shape {
     SHAPE_BAR,
@@ -1020,14 +1043,13 @@ static void fade_anim_opa(void *var, int32_t v) {
 
 static void alert_done(lv_anim_t *a) { lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN); }
 
-static void hide_alert(struct zmk_widget_eyes_status *widget) {
-    lv_anim_delete(widget->alert, fade_anim_opa);
-    lv_obj_add_flag(widget->alert, LV_OBJ_FLAG_HIDDEN);
-}
-
 // Hold at full opacity, then fade out and hide. One animation rather than a
 // timer plus an animation: the completion callback is the only thing that has
 // to run, and re-firing simply replaces it, which restarts the hold.
+//
+// Nothing else takes it down. Dialogue is independent of the face, so this
+// runs its course whatever the eyes do in the meantime - it sits above them
+// and no longer collides with anything.
 static void fire_alert(struct zmk_widget_eyes_status *widget) {
     lv_obj_t *o = widget->alert;
 
@@ -1107,12 +1129,6 @@ static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id i
     }
 
     widget->pending_expr = id;
-
-    // Any real change of face takes the alert with it - squeezed arriving while
-    // it is still up would otherwise leave a "!" hanging over a different
-    // expression than the one it reacted to. Only past the early return above,
-    // so a no-op call does not cut it short.
-    hide_alert(widget);
 
     if (id != EXPR_SLEEPY) {
         show_zzz(widget, false);
@@ -1289,10 +1305,6 @@ static void eyes_update_cb(struct eyes_state state) {
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
         widget->idle = state.idle;
         set_expression(widget, resolve(state));
-
-        // After the expression, deliberately. Typing starts both at once -
-        // waking the face from sleepy and crossing the alert threshold - and
-        // set_expression clears the alert, so firing first would lose it.
         update_alert(widget, state.wpm);
     }
 }
@@ -1339,21 +1351,26 @@ static void init_alert(struct zmk_widget_eyes_status *widget) {
     lv_label_set_text(widget->alert, "!");
     lv_obj_set_style_text_font(widget->alert, &Fredoka_SemiBold_20, LV_PART_MAIN);
     lv_obj_set_style_text_color(widget->alert, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(widget->alert, LV_ALIGN_CENTER, ALERT_X, ALERT_Y);
+    // Right edge pinned, so a longer string extends leftward from here.
+    lv_obj_align(widget->alert, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, DIALOGUE_TOP);
     lv_obj_add_flag(widget->alert, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void init_zzz(struct zmk_widget_eyes_status *widget) {
-    // Staggered so they read as a sequence rather than a pulse.
-    static const int16_t zx[3] = {74, 86, 98};
-    static const int16_t zy[3] = {-6, -22, -38};
+    // Staggered so they read as a sequence rather than a pulse, offset from the
+    // same top-right anchor the rest of the dialogue uses. The last one sits on
+    // the anchor itself and the others trail down and to the left, so the group
+    // keeps its diagonal while staying inside the band above the eyes.
+    static const int16_t zx[3] = {-26, -13, 0};
+    static const int16_t zy[3] = {8, 4, 0};
 
     for (int i = 0; i < 3; i++) {
         widget->zzz[i] = lv_label_create(widget->obj);
         lv_label_set_text(widget->zzz[i], "z");
         lv_obj_set_style_text_font(widget->zzz[i], &Fredoka_SemiBold_20, LV_PART_MAIN);
         lv_obj_set_style_text_color(widget->zzz[i], lv_color_white(), LV_PART_MAIN);
-        lv_obj_align(widget->zzz[i], LV_ALIGN_CENTER, zx[i], zy[i]);
+        lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i],
+                     DIALOGUE_TOP + zy[i]);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
 
         int16_t base = lv_obj_get_y(widget->zzz[i]);
