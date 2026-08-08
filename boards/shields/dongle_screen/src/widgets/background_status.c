@@ -10,6 +10,11 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
+#include <zmk/display.h>
+#include <zmk/event_manager.h>
+#include <zmk/events/wpm_state_changed.h>
+#include <zmk/wpm.h>
+
 #include "background_status.h"
 
 // Dim gold rather than a bright yellow, and never drawn at full opacity. The
@@ -42,6 +47,23 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // Keeps sparkles off the very edge, where the case lip eats the last few pixels
 // of the panel.
 #define BG_MARGIN 10
+
+// --- Stress lines ---
+//
+// Purple, and darker than the gold: these are pressure rather than sparkle, and
+// there are sixteen of them across the top where a sparkle is one small shape.
+#define BG_STRESS_COLOR 0x7B3FB0
+#define BG_STRESS_MAX_OPA 150
+#define BG_STRESS_W 2
+#define BG_STRESS_LEN_MIN 16
+#define BG_STRESS_LEN_MAX 74
+
+// Where the effect starts and where it reaches full strength. Matched to the
+// eyes' own thresholds so the face and the background agree about what fast
+// means: the strokes begin as the eyes start to strain and are at full pressure
+// by the time the eyes give up entirely.
+#define BG_STRESS_WPM_ON 50
+#define BG_STRESS_WPM_FULL 90
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
@@ -116,6 +138,94 @@ void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget) {
     }
 }
 
+// Scatters the strokes afresh: new positions, lengths and weights. Called each
+// time the effect comes up from nothing, so a burst of fast typing does not
+// draw the identical pattern it drew last time.
+static void scatter_stress(struct zmk_widget_background *widget) {
+    const int32_t w = lv_display_get_horizontal_resolution(NULL);
+
+    for (int i = 0; i < BG_STRESS_LINES; i++) {
+        const int32_t len = (int32_t)rnd_between(BG_STRESS_LEN_MIN, BG_STRESS_LEN_MAX);
+        lv_obj_t *o = widget->stress[i];
+
+        // Points are inset by half the stroke so a 2px line is not drawn half
+        // outside the object it belongs to.
+        widget->stress_pts[i][0].x = BG_STRESS_W / 2;
+        widget->stress_pts[i][0].y = 0;
+        widget->stress_pts[i][1].x = BG_STRESS_W / 2;
+        widget->stress_pts[i][1].y = len;
+
+        lv_line_set_points(o, widget->stress_pts[i], 2);
+        lv_obj_set_size(o, BG_STRESS_W + 1, len + 1);
+
+        // Spread across the width and hung from the very top edge, which is
+        // where this effect reads from.
+        lv_obj_set_pos(o, (int32_t)rnd_between(0, w - BG_STRESS_W), 0);
+
+        widget->stress_weight[i] = (uint8_t)rnd_between(55, 100);
+    }
+}
+
+// 0 at the threshold, 100 at full pressure. Below the threshold there is no
+// effect at all rather than a very faint one, so ordinary typing leaves the
+// background alone.
+static uint8_t stress_intensity(uint8_t wpm) {
+    if (wpm <= BG_STRESS_WPM_ON) {
+        return 0;
+    }
+    if (wpm >= BG_STRESS_WPM_FULL) {
+        return 100;
+    }
+    return (uint8_t)(((uint32_t)(wpm - BG_STRESS_WPM_ON) * 100) /
+                     (BG_STRESS_WPM_FULL - BG_STRESS_WPM_ON));
+}
+
+struct bg_state {
+    uint8_t wpm;
+};
+
+static void bg_update_cb(struct bg_state state) {
+    static uint8_t last;
+    const uint8_t now = stress_intensity(state.wpm);
+
+    if (now == last) {
+        return;
+    }
+
+    struct zmk_widget_background *widget;
+    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
+        if (last == 0 && now > 0) {
+            scatter_stress(widget);
+        }
+
+        for (int i = 0; i < BG_STRESS_LINES; i++) {
+            lv_obj_t *o = widget->stress[i];
+
+            if (now == 0) {
+                lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+
+            const uint32_t opa =
+                ((uint32_t)BG_STRESS_MAX_OPA * now * widget->stress_weight[i]) / 10000;
+            lv_obj_set_style_opa(o, (lv_opa_t)opa, LV_PART_MAIN);
+            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    last = now;
+}
+
+static struct bg_state bg_get_state(const zmk_event_t *eh) {
+    ARG_UNUSED(eh);
+    // Read from the API rather than the event payload, so the one-off init call
+    // that arrives with a null event needs no special case.
+    return (struct bg_state){.wpm = (uint8_t)zmk_wpm_get_state()};
+}
+
+ZMK_DISPLAY_WIDGET_LISTENER(widget_background, struct bg_state, bg_update_cb, bg_get_state)
+ZMK_SUBSCRIPTION(widget_background, zmk_wpm_state_changed);
+
 int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
     lv_obj_remove_style_all(widget->obj);
@@ -136,7 +246,24 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     }
 
+    // Created after the sparkles, so they sit over them if the two ever
+    // coincide - a burst on power-up and hard typing at the same moment.
+    for (int i = 0; i < BG_STRESS_LINES; i++) {
+        lv_obj_t *o = lv_line_create(widget->obj);
+        widget->stress[i] = o;
+
+        lv_obj_remove_style_all(o);
+        lv_obj_set_style_line_color(o, lv_color_hex(BG_STRESS_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_line_width(o, BG_STRESS_W, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
+        lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    scatter_stress(widget);
+
     sys_slist_append(&widgets, &widget->node);
+
+    widget_background_init();
 
     return 0;
 }

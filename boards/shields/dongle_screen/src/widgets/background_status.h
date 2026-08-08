@@ -19,11 +19,23 @@
 // outline.
 #define BG_SPARKLE_PTS 9
 
+// Vertical strokes hanging from the top of the panel, which fill in as typing
+// speed climbs. Enough to read as a wall of them at full intensity without
+// turning the top of the screen solid.
+#define BG_STRESS_LINES 16
+
 struct zmk_widget_background {
     sys_snode_t node;
     lv_obj_t *obj;
+
     lv_obj_t *sparkle[BG_SPARKLES];
     lv_point_precise_t pts[BG_SPARKLES][BG_SPARKLE_PTS];
+
+    lv_obj_t *stress[BG_STRESS_LINES];
+    lv_point_precise_t stress_pts[BG_STRESS_LINES][2];
+    // Per-line share of the full opacity, so they do not all come up together
+    // like a comb.
+    uint8_t stress_weight[BG_STRESS_LINES];
 };
 
 int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *parent);
