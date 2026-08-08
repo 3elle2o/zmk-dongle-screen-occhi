@@ -133,23 +133,39 @@ static bool is_peripheral_reconnecting(uint8_t source, uint8_t new_level)
     return reconnecting;
 }
 
+// Upper bounds, inclusive. Above the second one is a normal charge.
+#define BAT_CRITICAL_PCT 10
+#define BAT_LOW_PCT 20
+
+// One source of truth for the icon and the number alike. They had separate
+// copies of these thresholds, which is a standing invitation for the bar and
+// the figure beside it to disagree.
+//
+// Zero is grey rather than red: it does not mean a flat battery, it means the
+// half is not reporting at all - off, or out of range. Red is reserved for a
+// charge that is genuinely about to run out, which is worth distinguishing at
+// a glance from a half that simply is not there.
+static lv_color_t level_color(uint8_t level)
+{
+    if (level < 1)
+    {
+        return lv_palette_main(LV_PALETTE_GREY);
+    }
+    if (level <= BAT_CRITICAL_PCT)
+    {
+        return lv_palette_main(LV_PALETTE_RED);
+    }
+    if (level <= BAT_LOW_PCT)
+    {
+        return lv_palette_main(LV_PALETTE_YELLOW);
+    }
+    return lv_color_white();
+}
+
 static void draw_battery(lv_obj_t *canvas, uint8_t level, bool usb_present)
 {
     const lv_color_t bg = lv_color_black();
-    lv_color_t fg;
-
-    if (level < 1)
-    {
-        fg = lv_palette_main(LV_PALETTE_RED);
-    }
-    else if (level <= 10)
-    {
-        fg = lv_palette_main(LV_PALETTE_YELLOW);
-    }
-    else
-    {
-        fg = lv_color_white();
-    }
+    const lv_color_t fg = level_color(level);
 
     lv_canvas_fill_bg(canvas, bg, LV_OPA_COVER);
 
@@ -230,36 +246,19 @@ static void set_battery_symbol(lv_obj_t *widget, struct battery_state state)
 
     draw_battery(symbol, state.level, state.usb_present);
 
-    if (state.level > 0)
-    {
-        lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_label_set_text_fmt(label, "%u", state.level);
-    }
-    else
-    {
-        lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_RED), 0);
-        // Lowercase because the font carries no uppercase: the subset is
-        // digits and a-z only. An "X" here would render as nothing, and this
-        // is the glyph that says a half has dropped off.
-        lv_label_set_text(label, "x");
-    }
+    // Was two chained if/elses, the first of which the second overwrote in
+    // every branch - the colours it set were never seen.
+    lv_obj_set_style_text_color(label, level_color(state.level), 0);
 
     if (state.level < 1)
     {
-        lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_RED), 0);
         // Lowercase because the font carries no uppercase: the subset is
         // digits and a-z only. An "X" here would render as nothing, and this
         // is the glyph that says a half has dropped off.
         lv_label_set_text(label, "x");
     }
-    else if (state.level <= 10)
-    {
-        lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_YELLOW), 0);
-        lv_label_set_text_fmt(label, "%u", state.level);
-    }
     else
     {
-        lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_label_set_text_fmt(label, "%u", state.level);
     }
 
