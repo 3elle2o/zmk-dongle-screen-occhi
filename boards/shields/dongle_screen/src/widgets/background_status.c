@@ -17,17 +17,21 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // them and this has to be wide enough that the background never reads as
 // something to look at.
 #define BG_COLOR 0xC79A00
-#define BG_PEAK_OPA 140
+#define BG_PEAK_OPA 175
 
 // One shape at a range of sizes, rather than several shapes. A four-pointed
 // star is legible down to a few pixels, where anything more detailed turns to
 // mush, and keeping to one keeps the point maths in a single place.
 #define BG_R_MIN 3
-#define BG_R_MAX 9
+#define BG_R_MAX 12
 // Waist radius as a share of the tip radius. Lower is spikier; much above this
 // and the star rounds off into a diamond.
 #define BG_WAIST_PCT 34
-#define BG_LINE_W 2
+
+// Stroke scales with the star, so a big one does not come out as a thin wiry
+// outline while a small one is a blob. Held to whole pixels, which is all there
+// is to work with at these sizes.
+#define BG_LINE_W(r) (1 + (r) / 5)
 
 // The whole burst, within which each sparkle takes its own turn. Long enough to
 // register on boot, short enough not to delay the face.
@@ -86,6 +90,7 @@ void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget) {
         build_sparkle(widget->pts[i], r);
         lv_line_set_points(o, widget->pts[i], BG_SPARKLE_PTS);
         lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
+        lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
 
         // Placed by its top-left, so the centre is offset back by the radius.
         lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
@@ -125,7 +130,7 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
 
         lv_obj_remove_style_all(o);
         lv_obj_set_style_line_color(o, lv_color_hex(BG_COLOR), LV_PART_MAIN);
-        lv_obj_set_style_line_width(o, BG_LINE_W, LV_PART_MAIN);
+        // Width is set per sparkle in the burst, since it follows the size.
         lv_obj_set_style_line_rounded(o, true, LV_PART_MAIN);
         lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
