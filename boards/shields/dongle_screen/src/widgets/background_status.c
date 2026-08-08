@@ -22,7 +22,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // them and this has to be wide enough that the background never reads as
 // something to look at.
 #define BG_COLOR 0xC79A00
-#define BG_PEAK_OPA 175
+#define BG_PEAK_OPA 210
 
 // One shape at a range of sizes, rather than several shapes. A four-pointed
 // star is legible down to a few pixels, where anything more detailed turns to
@@ -53,17 +53,24 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // Purple, and darker than the gold: these are pressure rather than sparkle, and
 // there are sixteen of them across the top where a sparkle is one small shape.
 #define BG_STRESS_COLOR 0x7B3FB0
-#define BG_STRESS_MAX_OPA 150
-#define BG_STRESS_W 2
+#define BG_STRESS_MAX_OPA 200
+#define BG_STRESS_W 3
 #define BG_STRESS_LEN_MIN 16
 #define BG_STRESS_LEN_MAX 74
+
+// A blue wash behind the strokes. Vertical gradient into black, which is the
+// screen's own colour, so it fades out rather than ending on an edge. Taller
+// than the longest stroke so they finish inside it rather than hanging past it.
+#define BG_GRAD_COLOR 0x263A96
+#define BG_GRAD_H 96
+#define BG_GRAD_MAX_OPA 130
 
 // Where the effect starts and where it reaches full strength. Matched to the
 // eyes' own thresholds so the face and the background agree about what fast
 // means: the strokes begin as the eyes start to strain and are at full pressure
 // by the time the eyes give up entirely.
 #define BG_STRESS_WPM_ON 50
-#define BG_STRESS_WPM_FULL 90
+#define BG_STRESS_WPM_FULL 87
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
@@ -198,6 +205,14 @@ static void bg_update_cb(struct bg_state state) {
             scatter_stress(widget);
         }
 
+        if (now == 0) {
+            lv_obj_add_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_set_style_opa(widget->stress_grad, (lv_opa_t)(BG_GRAD_MAX_OPA * now / 100),
+                                 LV_PART_MAIN);
+            lv_obj_remove_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
+        }
+
         for (int i = 0; i < BG_STRESS_LINES; i++) {
             lv_obj_t *o = widget->stress[i];
 
@@ -231,6 +246,19 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
     lv_obj_remove_style_all(widget->obj);
     lv_obj_set_size(widget->obj, lv_pct(100), lv_pct(100));
     lv_obj_remove_flag(widget->obj, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Creation order is the whole layering scheme, here as much as between
+    // widgets: the wash first so it is behind its own strokes, and behind the
+    // sparkles too if a power-up burst ever coincides with hard typing.
+    widget->stress_grad = lv_obj_create(widget->obj);
+    lv_obj_remove_style_all(widget->stress_grad);
+    lv_obj_set_size(widget->stress_grad, lv_pct(100), BG_GRAD_H);
+    lv_obj_set_pos(widget->stress_grad, 0, 0);
+    lv_obj_set_style_bg_color(widget->stress_grad, lv_color_hex(BG_GRAD_COLOR), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_color(widget->stress_grad, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_dir(widget->stress_grad, LV_GRAD_DIR_VER, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(widget->stress_grad, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_add_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
 
     // Nothing here should ever intercept a redraw ordering decision made by the
     // widgets in front: this layer is created first and never raises itself.

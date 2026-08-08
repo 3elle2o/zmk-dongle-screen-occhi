@@ -31,6 +31,9 @@ struct zmk_widget_background {
     lv_obj_t *sparkle[BG_SPARKLES];
     lv_point_precise_t pts[BG_SPARKLES][BG_SPARKLE_PTS];
 
+    // A wash behind the strokes, so they read as falling out of something
+    // rather than floating on black.
+    lv_obj_t *stress_grad;
     lv_obj_t *stress[BG_STRESS_LINES];
     lv_point_precise_t stress_pts[BG_STRESS_LINES][2];
     // Per-line share of the full opacity, so they do not all come up together
