@@ -78,6 +78,29 @@ static lv_color_t battery_image_buffer[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOUR
 // ZMK sends battery events with level < 1 when peripherals disconnect
 static int8_t last_battery_levels[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET];
 
+// The last state each source reported, so any repaint can redraw all of them.
+//
+// ZMK_DISPLAY_WIDGET_LISTENER keeps a single state and a single work item, so
+// two events arriving before the display thread services the queue collapse
+// into one: the second overwrites the first, and re-submitting a work item
+// that is already pending does nothing. One widget, two sources, one slot.
+//
+// The halves report on independent intervals and rarely collide, but they
+// report together precisely when it matters - both powering down, or both
+// joining at boot - and whichever lost the race was never drawn at all.
+static struct battery_state source_states[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET];
+
+static void init_source_states(void)
+{
+    for (int i = 0; i < (ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET); i++)
+    {
+        // Level 0 draws as a red x, which is the honest state for a half that
+        // has not reported yet. Starting here also means the row is complete
+        // from boot rather than filling in a cell at a time.
+        source_states[i] = (struct battery_state){.source = i, .level = 0};
+    }
+}
+
 static void init_peripheral_tracking(void)
 {
     for (int i = 0; i < (ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET); i++)
@@ -248,8 +271,19 @@ static void set_battery_symbol(lv_obj_t *widget, struct battery_state state)
 
 void battery_status_update_cb(struct battery_state state)
 {
+    // The passed state is deliberately ignored: it is only ever the most recent
+    // event, and the point here is to survive the ones that got coalesced away.
+    // Redrawing every source costs two canvases and is idempotent.
+    ARG_UNUSED(state);
+
     struct zmk_widget_dongle_battery_status *widget;
-    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) { set_battery_symbol(widget->obj, state); }
+    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node)
+    {
+        for (int i = 0; i < (ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET); i++)
+        {
+            set_battery_symbol(widget->obj, source_states[i]);
+        }
+    }
 }
 
 static struct battery_state peripheral_battery_status_get_state(const zmk_event_t *eh)
@@ -273,16 +307,35 @@ static struct battery_state central_battery_status_get_state(const zmk_event_t *
     };
 }
 
+static void record_source(struct battery_state s)
+{
+    if (s.source < (ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET))
+    {
+        source_states[s.source] = s;
+    }
+}
+
 static struct battery_state battery_status_get_state(const zmk_event_t *eh)
 {
+    // Recorded here rather than in the update callback because this runs for
+    // every event, including the ones whose work submission is swallowed by an
+    // already-pending one. That is exactly the case being fixed.
     if (as_zmk_peripheral_battery_state_changed(eh) != NULL)
     {
-        return peripheral_battery_status_get_state(eh);
+        struct battery_state s = peripheral_battery_status_get_state(eh);
+        record_source(s);
+        return s;
     }
-    else
-    {
-        return central_battery_status_get_state(eh);
-    }
+
+    struct battery_state s = central_battery_status_get_state(eh);
+#if IS_ENABLED(CONFIG_ZMK_DONGLE_DISPLAY_DONGLE_BATTERY)
+    record_source(s);
+#else
+    // Without a dongle cell there is no source 0 of its own, and the listener's
+    // one-off init call arrives here with a null event. Recording it would
+    // paint the dongle's own charge into the first half's cell.
+#endif
+    return s;
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(widget_dongle_battery_status, struct battery_state,
@@ -334,6 +387,7 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
 
     // Initialize peripheral tracking
     init_peripheral_tracking();
+    init_source_states();
 
     widget_dongle_battery_status_init();
 
