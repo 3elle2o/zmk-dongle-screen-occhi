@@ -304,7 +304,7 @@ The module is MIT, **except** the bundled font:
 | Path | Licence |
 | --- | --- |
 | Everything else | MIT |
-| `boards/shields/dongle_screen/src/fonts/Fredoka_Regular_20.c` | SIL OFL 1.1 |
+| `boards/shields/dongle_screen/src/fonts/Fredoka_SemiBold_20.c` | SIL OFL 1.1 |
 | `boards/shields/dongle_screen/src/fonts/Fredoka-OFL.txt` | the OFL licence text itself |
 
 [Fredoka](https://github.com/hafontia/Fredoka-One) is Copyright 2016 The Fredoka Project Authors,
@@ -316,8 +316,18 @@ If you redistribute this module, `Fredoka-OFL.txt` must travel with the font. Th
 one substantive condition.
 
 The font was generated from the upstream variable font by instancing `wght=600 wdth=100` with
-`fontTools`, then converting with `lv_font_conv` at 20px / 4bpp, subset to digits, `A-Z`, space,
-`%` and lowercase `z`. Regenerate rather than hand-editing it.
+`fontTools`, then converting with `lv_font_conv` at 20px / 4bpp. Regenerate rather than
+hand-editing it:
+
+```
+lv_font_conv --font Fredoka-SemiBold.ttf -r 0x20,0x25,0x30-0x39,0x61-0x7A \
+  --size 20 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h -o Fredoka_SemiBold_20.c
+```
+
+**The subset is space, `%`, digits and `a-z` — there is no uppercase.** Every label drawn in
+this font must be lowercase; an uppercase character renders as nothing at all. That is a silent
+failure, so widen the range above before introducing one rather than after wondering where the
+text went.
 
 ---
 

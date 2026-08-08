@@ -56,7 +56,7 @@ static void set_status_symbol(struct zmk_widget_output_status *widget, struct ou
     case ZMK_TRANSPORT_USB:
         // Red when the dongle has power but the host isn't talking to it,
         // e.g. plugged into a charger rather than a computer.
-        snprintf(transport_text, sizeof(transport_text), "#%s USB#",
+        snprintf(transport_text, sizeof(transport_text), "#%s usb#",
                  state.usb_is_hid_ready ? "ffffff" : "ff0000");
         break;
 
@@ -74,7 +74,7 @@ static void set_status_symbol(struct zmk_widget_output_status *widget, struct ou
 
         // Label and profile number go in one label. Two labels aligned to
         // opposite edges of a hand-sized box was what got them clipped.
-        snprintf(transport_text, sizeof(transport_text), "#%s BLE %d#", ble_color,
+        snprintf(transport_text, sizeof(transport_text), "#%s ble %d#", ble_color,
                  state.active_profile_index + 1);
         break;
     }
