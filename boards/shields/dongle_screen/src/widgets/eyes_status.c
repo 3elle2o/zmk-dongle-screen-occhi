@@ -307,7 +307,12 @@ static const struct expression expressions[EXPR_COUNT] = {
     [EXPR_NEUTRAL_SMALL] = {SHAPE_BAR, EYE_W * QUIRK_SMALL_PCT / 100,
                             EYE_H * QUIRK_SMALL_PCT / 100, 0, 0, EYE_R * QUIRK_SMALL_PCT / 100,
                             false},
-    [EXPR_NEUTRAL_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true},
+    // Cuts in at 80ms like the layer expressions rather than easing over the
+    // default 200. Animations step at the refresh period, so a 200ms morph is
+    // sampled about twice: the plain quirks survive that because a growing
+    // rounded rectangle reads fine half-drawn, but a half-formed sparkle just
+    // looks like it arrived late.
+    [EXPR_NEUTRAL_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
 };
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
@@ -667,9 +672,33 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
 // leaves behind.
 static void fill_polygon(lv_obj_t *canvas, const lv_point_precise_t *p, int n, int32_t ox,
                          int32_t oy) {
-    lv_canvas_fill_bg(canvas, lv_color_black(), LV_OPA_COVER);
+    lv_draw_buf_t *db = lv_canvas_get_draw_buf(canvas);
+    uint8_t *const base = db->data;
+    const uint32_t stride = db->header.stride;
 
-    for (int32_t y = 0; y < EYE_FILL_H; y++) {
+    // Black is all-zero bytes in RGB565, so the clear is one memset rather than
+    // a per-pixel background fill.
+    lv_memzero(base, stride * EYE_FILL_H);
+
+    // Only scan the rows the polygon actually reaches. The canvas is sized for
+    // the tallest expression, but this runs on every step of a morph, and for
+    // most of one the eye is a few pixels tall inside eighty. Rows outside this
+    // span can have no crossings, so skipping them changes nothing.
+    int32_t y_top = EYE_FILL_H - 1;
+    int32_t y_bot = 0;
+    for (int i = 0; i < n; i++) {
+        const int32_t y = (int32_t)p[i].y + oy;
+        if (y < y_top) {
+            y_top = y;
+        }
+        if (y > y_bot) {
+            y_bot = y;
+        }
+    }
+    y_top = MAX(y_top, 0);
+    y_bot = MIN(y_bot, EYE_FILL_H - 1);
+
+    for (int32_t y = y_top; y <= y_bot; y++) {
         int32_t xs[FILL_MAX_X];
         int cnt = 0;
 
@@ -701,11 +730,22 @@ static void fill_polygon(lv_obj_t *canvas, const lv_point_precise_t *p, int n, i
             int32_t from = MAX(xs[k], 0);
             int32_t to = MIN(xs[k + 1], EYE_FILL_W - 1);
 
+            // Direct spans rather than lv_canvas_set_px. That call re-reads the
+            // draw buffer and switches on the colour format for every single
+            // pixel, and this covers a few thousand per eye per frame - enough
+            // to be felt as a hitch when the twinkle morphs in. White is 0xFFFF
+            // in RGB565 whichever way round the bytes go, so LV_COLOR_16_SWAP
+            // does not come into it.
+            uint16_t *const row = (uint16_t *)(base + (uint32_t)y * stride);
             for (int32_t x = from; x <= to; x++) {
-                lv_canvas_set_px(canvas, x, y, lv_color_white(), LV_OPA_COVER);
+                row[x] = 0xFFFF;
             }
         }
     }
+
+    // Writing into the buffer behind LVGL's back means saying so once, which is
+    // cheaper than whatever set_px was doing per pixel regardless.
+    lv_obj_invalidate(canvas);
 }
 
 static void apply_geometry(struct zmk_widget_eyes_status *widget) {
