@@ -157,6 +157,17 @@ config DONGLE_SCREEN_EYES_ACTIVE
       Turn DONGLE_SCREEN_LAYER_ACTIVE off when enabling this, or the layer
       label will be drawn underneath them.
 
+config DONGLE_SCREEN_BACKGROUND_ACTIVE
+    bool "Background layer active"
+    default n
+    select LV_USE_LINE
+    help
+      A layer behind every other widget, for things that are atmosphere rather
+      than information. Currently a burst of sparkles on power-up.
+
+      Deliberately dimmer than the eyes and the dialogue, which are pure white:
+      the background must never compete with them for attention.
+
 config DONGLE_SCREEN_MODIFIER_ACTIVE
     bool "Modifier Widget active"
     default y

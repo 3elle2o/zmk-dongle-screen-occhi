@@ -21,6 +21,11 @@ static struct zmk_widget_layer_status layer_status_widget;
 static struct zmk_widget_eyes_status eyes_status_widget;
 #endif
 
+#if CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE
+#include "widgets/background_status.h"
+static struct zmk_widget_background background_widget;
+#endif
+
 #if CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE
 #include "widgets/battery_status.h"
 static struct zmk_widget_dongle_battery_status dongle_battery_status_widget;
@@ -55,6 +60,16 @@ lv_obj_t *zmk_display_status_screen()
     lv_style_set_text_letter_space(&global_style, 1);
     lv_style_set_text_line_space(&global_style, 1);
     lv_obj_add_style(screen, &global_style, LV_PART_MAIN);
+
+#if CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE
+    // First, and deliberately so: LVGL draws children in creation order, which
+    // is what puts this behind everything else. Nothing in front raises itself
+    // above a sibling except the dialogue and the eyes' own cut-out, both of
+    // which want to be in front of this anyway.
+    zmk_widget_background_init(&background_widget, screen);
+    lv_obj_align(zmk_widget_background_obj(&background_widget), LV_ALIGN_CENTER, 0, 0);
+    zmk_widget_background_sparkle_burst(&background_widget);
+#endif
 
 #if CONFIG_DONGLE_SCREEN_OUTPUT_ACTIVE
     zmk_widget_output_status_init(&output_status_widget, screen);
