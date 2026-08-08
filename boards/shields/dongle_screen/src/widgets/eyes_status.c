@@ -112,7 +112,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // that a pause has to be real before it can fire again.
 #define WPM_ALERT_ON 5
 #define WPM_ALERT_OFF 2
-#define ALERT_HOLD_MS 600
 
 // Dialogue is grouped by the event that prompts it, and one line is picked at
 // random each time. Adding a variation is a line in the right list.
@@ -127,7 +126,6 @@ static const char *const DIALOGUE_WAKE[] = {
     "im awake now",
     "hello there",
 };
-#define WAKE_HOLD_MS 1800
 
 // Typing has started.
 static const char *const DIALOGUE_ALERT[] = {
@@ -142,17 +140,25 @@ static const char *const DIALOGUE_NAG[] = {
 };
 #define NAG_DELAY_MS 15000
 #define NAG_CHANCE_PCT 20
-#define NAG_HOLD_MS 2600
 
+// How long a finished remark sits before it starts to go. One number for every
+// line, not one per line: because text is revealed as it is written, a long
+// remark has already been read by the time it finishes, so it needs no more
+// dwell at the end than a short one does.
+#define DIALOGUE_HOLD_MS 1200
 #define DIALOGUE_FADE_MS 400
 
 // Revealed a few characters at a time, like a visual novel. Animations step at
 // the refresh period, so this lands in a handful of frames rather than one
 // character per frame - the point is that it arrives as text being written
 // rather than a block appearing, without becoming something to wait through.
-// The cap keeps a long remark from dragging.
+//
+// The cap only guards against a remark far longer than anything written so far.
+// It has to stay clear of the real lines, because a capped reveal races past
+// reading speed - and the whole reason one hold suits every length is that the
+// reading happens while the text is being written.
 #define REVEAL_MS_PER_CHAR 30
-#define REVEAL_MAX_MS 700
+#define REVEAL_MAX_MS 1200
 // Breathing room inside the black plate, so glyphs are not flush to its edge.
 #define DIALOGUE_PAD 3
 
@@ -1167,8 +1173,7 @@ static void dialogue_reveal_cb(void *var, int32_t shown) {
 //
 // Nothing external takes it down. Dialogue is independent of the face, so a
 // line runs its course whatever the eyes do in the meantime.
-static void say(struct zmk_widget_eyes_status *widget, const char *text, uint32_t hold_ms,
-                uint8_t prio) {
+static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t prio) {
     // An animation still running means a remark is still being spoken.
     if (lv_anim_get(widget, dialogue_fade_cb) != NULL && prio < dialogue_prio) {
         return;
@@ -1214,7 +1219,7 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint32_
     lv_anim_set_var(&a, widget);
     lv_anim_set_exec_cb(&a, dialogue_fade_cb);
     lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_delay(&a, reveal_ms + hold_ms);
+    lv_anim_set_delay(&a, reveal_ms + DIALOGUE_HOLD_MS);
     lv_anim_set_time(&a, DIALOGUE_FADE_MS);
     lv_anim_set_completed_cb(&a, dialogue_done);
     lv_anim_start(&a);
@@ -1222,8 +1227,7 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint32_
 
 // Picks one of an event's lines at random. Adding a variation is a line in the
 // list, nothing else.
-#define SAY_ONE_OF(widget, lines, hold_ms, prio)                                                   \
-    say((widget), (lines)[rnd() % ARRAY_SIZE(lines)], (hold_ms), (prio))
+#define SAY_ONE_OF(widget, lines, prio) say((widget), (lines)[rnd() % ARRAY_SIZE(lines)], (prio))
 
 static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
     for (int i = 0; i < 3; i++) {
@@ -1470,7 +1474,7 @@ static void nag_timer_cb(lv_timer_t *timer) {
         return;
     }
 
-    SAY_ONE_OF(widget, DIALOGUE_NAG, NAG_HOLD_MS, DIALOGUE_PRIO_CHATTER);
+    SAY_ONE_OF(widget, DIALOGUE_NAG, DIALOGUE_PRIO_CHATTER);
 }
 
 static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
@@ -1482,7 +1486,7 @@ static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
             lv_timer_pause(nag_timer);
         }
 
-        SAY_ONE_OF(widget, DIALOGUE_ALERT, ALERT_HOLD_MS, DIALOGUE_PRIO_CHATTER);
+        SAY_ONE_OF(widget, DIALOGUE_ALERT, DIALOGUE_PRIO_CHATTER);
     } else if (alert_armed && wpm <= WPM_ALERT_OFF) {
         alert_armed = false;
 
@@ -1513,7 +1517,7 @@ static void eyes_update_cb(struct eyes_state state) {
         // Last, so it outranks the "!" that the same keypress is about to
         // trigger as the typing speed climbs past the threshold.
         if (waking) {
-            SAY_ONE_OF(widget, DIALOGUE_WAKE, WAKE_HOLD_MS, DIALOGUE_PRIO_WAKE);
+            SAY_ONE_OF(widget, DIALOGUE_WAKE, DIALOGUE_PRIO_WAKE);
         }
     }
 }
@@ -1722,7 +1726,7 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
 
     // The greeting at power-up. After the listener's own initial update, which
     // would otherwise draw the face over a line already being spoken.
-    SAY_ONE_OF(widget, DIALOGUE_WAKE, WAKE_HOLD_MS, DIALOGUE_PRIO_WAKE);
+    SAY_ONE_OF(widget, DIALOGUE_WAKE, DIALOGUE_PRIO_WAKE);
 
     return 0;
 }
