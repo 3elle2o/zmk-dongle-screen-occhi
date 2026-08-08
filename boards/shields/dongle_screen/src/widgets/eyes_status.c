@@ -92,8 +92,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // well below where it triggers.
 #define WPM_SQUEEZE_ON 40
 #define WPM_SQUEEZE_OFF 33
-#define WPM_CONFUSED_ON 70
-#define WPM_CONFUSED_OFF 62
+#define WPM_CONFUSED_ON 80
+#define WPM_CONFUSED_OFF 72
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
