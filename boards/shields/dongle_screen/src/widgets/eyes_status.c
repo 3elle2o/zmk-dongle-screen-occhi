@@ -172,8 +172,8 @@ static const char *const DIALOGUE_NAG[] = {
 // It has to stay clear of the real lines, because a capped reveal races past
 // reading speed - and the whole reason one hold suits every length is that the
 // reading happens while the text is being written.
-#define REVEAL_MS_PER_CHAR 30
-#define REVEAL_MAX_MS 1200
+#define REVEAL_MS_PER_CHAR 40
+#define REVEAL_MAX_MS 1600
 // Breathing room inside the black plate, so glyphs are not flush to its edge.
 #define DIALOGUE_PAD 3
 
