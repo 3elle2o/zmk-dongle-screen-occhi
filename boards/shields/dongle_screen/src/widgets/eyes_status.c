@@ -18,6 +18,7 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/random/random.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/activity.h>
@@ -144,6 +145,14 @@ static const char *const DIALOGUE_NAG[] = {
 #define NAG_HOLD_MS 2600
 
 #define DIALOGUE_FADE_MS 400
+
+// Revealed a few characters at a time, like a visual novel. Animations step at
+// the refresh period, so this lands in a handful of frames rather than one
+// character per frame - the point is that it arrives as text being written
+// rather than a block appearing, without becoming something to wait through.
+// The cap keeps a long remark from dragging.
+#define REVEAL_MS_PER_CHAR 30
+#define REVEAL_MAX_MS 700
 // Breathing room inside the black plate, so glyphs are not flush to its edge.
 #define DIALOGUE_PAD 3
 
@@ -430,7 +439,12 @@ static uint32_t rng_state;
 
 static uint32_t rnd(void) {
     if (rng_state == 0) {
-        rng_state = (uint32_t)k_uptime_get() | 1u;
+        // Real entropy, not the uptime. Seeding from the clock looks fine for
+        // the timers, which are first drawn on long enough for it to have
+        // moved - but the greeting is chosen during widget init, when the
+        // uptime is the same few hundred milliseconds on every boot. Same
+        // seed, same sequence, same line every single time.
+        rng_state = sys_rand32_get() | 1u;
     }
     rng_state ^= rng_state << 13;
     rng_state ^= rng_state >> 17;
@@ -1103,6 +1117,49 @@ static void dialogue_done(lv_anim_t *a) {
 // is still running, which is also how "still speaking" is decided.
 static uint8_t dialogue_prio;
 
+// The remark being revealed. Always a string literal from the lists above, so
+// holding a pointer to it is safe for as long as the animation runs.
+static const char *dialogue_text;
+
+// Fills each line with as much of its text as has been revealed so far. Walks
+// the whole remark every step rather than tracking a position, which costs
+// nothing at these lengths and keeps the mapping from count to screen in one
+// place.
+static void dialogue_reveal_cb(void *var, int32_t shown) {
+    struct zmk_widget_eyes_status *widget = var;
+    int remaining = shown;
+    int line = 0;
+
+    for (const char *p = dialogue_text; *p && line < DIALOGUE_MAX_LINES; line++) {
+        const char *nl = strchr(p, '\n');
+        int len = nl ? (int)(nl - p) : (int)strlen(p);
+        int show = remaining <= 0 ? 0 : MIN(remaining, len);
+
+        lv_obj_t *o = widget->dialogue[line];
+        if (show > 0) {
+            lv_label_set_text_fmt(o, "%.*s", show, p);
+            // Raised only on the way out of hidden. Doing it every step would
+            // reorder the children on every frame for no gain.
+            if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) {
+                lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_move_foreground(o);
+            }
+        } else {
+            // Hidden rather than emptied: an empty label still draws its
+            // padding, which would sit there as a small black tab waiting for
+            // its first character.
+            lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        remaining -= len;
+        p = nl ? nl + 1 : p + len;
+    }
+
+    for (int i = line; i < DIALOGUE_MAX_LINES; i++) {
+        lv_obj_add_flag(widget->dialogue[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 // Say one line: show it, hold at full opacity, then fade out and hide. One
 // animation rather than a timer plus an animation, because the completion
 // callback is the only thing that has to run, and speaking again simply
@@ -1119,37 +1176,45 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint32_
     dialogue_prio = prio;
 
     lv_anim_delete(widget, dialogue_fade_cb);
+    lv_anim_delete(widget, dialogue_reveal_cb);
 
-    // Split on the written-in breaks, a label to a line. Anything past the
-    // last label is dropped rather than crammed in.
-    int line = 0;
-    for (const char *p = text; *p && line < DIALOGUE_MAX_LINES; line++) {
-        const char *nl = strchr(p, '\n');
-        int len = nl ? (int)(nl - p) : (int)strlen(p);
+    dialogue_text = text;
 
-        lv_obj_t *o = widget->dialogue[line];
-        lv_label_set_text_fmt(o, "%.*s", len, p);
-        lv_obj_set_style_opa(o, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-        // Above the eyes wherever the two meet. apply_geometry raises the
-        // twinkle's cut-out on every pass, so being created later is not enough
-        // on its own.
-        lv_obj_move_foreground(o);
-
-        p = nl ? nl + 1 : p + len;
+    // Newlines are breaks, not characters, so they do not take a beat of their
+    // own during the reveal.
+    int total = 0;
+    for (const char *p = text; *p; p++) {
+        if (*p != '\n') {
+            total++;
+        }
     }
 
-    // A shorter remark than the last one must not leave its tail on screen.
-    for (int i = line; i < DIALOGUE_MAX_LINES; i++) {
-        lv_obj_add_flag(widget->dialogue[i], LV_OBJ_FLAG_HIDDEN);
+    // Full opacity up front: the fade runs after a delay, and until it starts
+    // its callback is not touching these.
+    for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
+        lv_obj_set_style_opa(widget->dialogue[i], LV_OPA_COVER, LV_PART_MAIN);
     }
+    dialogue_reveal_cb(widget, 0);
 
+    const uint32_t reveal_ms = MIN((uint32_t)total * REVEAL_MS_PER_CHAR, REVEAL_MAX_MS);
+
+    lv_anim_t r;
+    lv_anim_init(&r);
+    lv_anim_set_var(&r, widget);
+    lv_anim_set_exec_cb(&r, dialogue_reveal_cb);
+    lv_anim_set_values(&r, 0, total);
+    lv_anim_set_time(&r, reveal_ms);
+    lv_anim_start(&r);
+
+    // Distinct exec callbacks, so this coexists with the reveal rather than
+    // replacing it - lv_anim keys on the variable and the callback together.
+    // The hold begins once the last character has landed.
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, widget);
     lv_anim_set_exec_cb(&a, dialogue_fade_cb);
     lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_delay(&a, hold_ms);
+    lv_anim_set_delay(&a, reveal_ms + hold_ms);
     lv_anim_set_time(&a, DIALOGUE_FADE_MS);
     lv_anim_set_completed_cb(&a, dialogue_done);
     lv_anim_start(&a);
