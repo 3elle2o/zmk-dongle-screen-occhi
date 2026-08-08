@@ -116,14 +116,28 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define DIALOGUE_WAKE "im awake now"
 #define WAKE_HOLD_MS 1800
 
+// Impatience, once typing has stopped for a while. Rolled each time typing
+// stops rather than repeatedly while it stays stopped, so a long pause gets one
+// chance at a remark and not a stream of them.
+#define DIALOGUE_NAG "are u gonna start typing or what"
+#define NAG_DELAY_MS 15000
+#define NAG_CHANCE_PCT 20
+#define NAG_HOLD_MS 2600
+
 #define DIALOGUE_FADE_MS 400
 // Breathing room inside the black plate, so glyphs are not flush to its edge.
 #define DIALOGUE_PAD 3
 
+// Widest a line may get before it wraps. Anything long enough to wrap will
+// cross the eyes, which is what the black plate is for - legibility over the
+// face rather than avoidance of it.
+#define DIALOGUE_MAX_W 200
+
 // A line already being spoken is not interrupted by a lower-ranked one. The
 // typing "!" is redundant on the heels of waking up, and cutting a sentence
-// short to say it reads worse than not saying it at all.
-#define DIALOGUE_PRIO_ALERT 0
+// short to say it reads worse than not saying it at all. Equal ranks replace
+// each other freely - chatter answering chatter is fine.
+#define DIALOGUE_PRIO_CHATTER 0
 #define DIALOGUE_PRIO_WAKE 1
 
 // Dialogue: everything the buddy says beside its face - the sleep z's, the
@@ -222,8 +236,8 @@ enum eye_shape {
 // Rare transient variations on the resting face: a quirk timer swaps one in
 // for a couple of seconds, then back. Scale factors are applied to width,
 // height and radius alike so the silhouette stays neutral's, just resized.
-#define QUIRK_MIN_MS 20000
-#define QUIRK_MAX_MS 70000
+#define QUIRK_MIN_MS 50000
+#define QUIRK_MAX_MS 100000
 #define QUIRK_HOLD_MS 2200
 #define QUIRK_UP_PCT 116
 #define QUIRK_SMALL_PCT 62
@@ -1323,12 +1337,50 @@ static enum expr_id resolve(struct eyes_state state) {
 // means a genuine pause has to happen before it can fire again.
 static bool alert_armed;
 
+static lv_timer_t *nag_timer;
+
+static void nag_timer_cb(lv_timer_t *timer) {
+    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+
+    // One shot per pause, by pausing rather than by a repeat count: LVGL
+    // deletes a timer whose count reaches zero, and this one has to survive to
+    // be re-armed the next time typing stops.
+    lv_timer_pause(timer);
+
+    // Asleep is a different situation with its own dialogue - the z's - and
+    // being nagged awake would undercut them.
+    if (widget->idle) {
+        return;
+    }
+
+    if (rnd() % 100 >= NAG_CHANCE_PCT) {
+        return;
+    }
+
+    say(widget, DIALOGUE_NAG, NAG_HOLD_MS, DIALOGUE_PRIO_CHATTER);
+}
+
 static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
     if (!alert_armed && wpm >= WPM_ALERT_ON) {
         alert_armed = true;
-        say(widget, "!", ALERT_HOLD_MS, DIALOGUE_PRIO_ALERT);
+
+        // Typing resumed, so there is nothing left to be impatient about.
+        if (nag_timer) {
+            lv_timer_pause(nag_timer);
+        }
+
+        say(widget, "!", ALERT_HOLD_MS, DIALOGUE_PRIO_CHATTER);
     } else if (alert_armed && wpm <= WPM_ALERT_OFF) {
         alert_armed = false;
+
+        // Typing stopped: arm the one remark this pause is allowed. Re-armed on
+        // the falling edge only, so a pause that lasts an hour still gets a
+        // single roll rather than one every fifteen seconds.
+        if (nag_timer) {
+            lv_timer_set_period(nag_timer, NAG_DELAY_MS);
+            lv_timer_reset(nag_timer);
+            lv_timer_resume(nag_timer);
+        }
     }
 }
 
@@ -1401,6 +1453,14 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
     lv_obj_set_style_bg_color(widget->dialogue, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(widget->dialogue, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_pad_all(widget->dialogue, DIALOGUE_PAD, LV_PART_MAIN);
+
+    // Sized to its text but capped, so a short line gets a plate no wider than
+    // itself and a long one wraps rather than running off the widget - where it
+    // would simply be clipped, children being confined to their parent's box.
+    lv_obj_set_width(widget->dialogue, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(widget->dialogue, DIALOGUE_MAX_W, LV_PART_MAIN);
+    lv_label_set_long_mode(widget->dialogue, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(widget->dialogue, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
 
     // Right edge pinned, so a longer string extends leftward from here.
     lv_obj_align(widget->dialogue, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, DIALOGUE_TOP);
@@ -1532,6 +1592,12 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     zzz_timer = lv_timer_create(zzz_timer_cb, ZZZ_DELAY_MS, widget);
     lv_timer_set_repeat_count(zzz_timer, -1);
     lv_timer_pause(zzz_timer);
+
+    // Same shape as the z's timer, and for the same reason: infinite repeat,
+    // paused by its own callback, so it is still there to re-arm.
+    nag_timer = lv_timer_create(nag_timer_cb, NAG_DELAY_MS, widget);
+    lv_timer_set_repeat_count(nag_timer, -1);
+    lv_timer_pause(nag_timer);
 
     sys_slist_append(&widgets, &widget->node);
 
