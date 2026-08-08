@@ -109,6 +109,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // that a pause has to be real before it can fire again.
 #define WPM_ALERT_ON 5
 #define WPM_ALERT_OFF 2
+// Rolled per burst of typing, so it does not pipe up every single time. The
+// arming is unconditional either way - only the speaking is a gamble - so a
+// lost roll still costs this burst its turn rather than carrying over.
+#define ALERT_CHANCE_PCT 60
 
 // Dialogue is grouped by the event that prompts it, and one line is picked at
 // random each time. Adding a variation is a line in the right list.
@@ -183,7 +187,12 @@ static const char *const DIALOGUE_NAG[] = {
 #define REVEAL_MS_PER_CHAR 40
 #define REVEAL_MAX_MS 1600
 // Breathing room inside the black plate, so glyphs are not flush to its edge.
-#define DIALOGUE_PAD 3
+// Split, because the two do different jobs: the horizontal padding is what
+// makes the plate read as a highlight around the words, while the vertical
+// padding only adds to the line pitch. Keeping the vertical padding tight pulls
+// the lines together, which is what lets the whole block sit higher.
+#define DIALOGUE_PAD_H 3
+#define DIALOGUE_PAD_V 1
 
 // A line already being spoken is not interrupted by a lower-ranked one. The
 // typing "!" is redundant on the heels of waking up, and cutting a sentence
@@ -209,11 +218,12 @@ static const char *const DIALOGUE_NAG[] = {
 // band over the eyes rather than down across them, and its final line sits in
 // the same place whether it is one line or two.
 //
-// 62 is the lowest value that leaves room for two lines plus the drift on the
-// way out, given the box now starts at the top of the screen. It puts the
-// bottom of a plate a few pixels into the top of the eyes, which the plate
-// covers.
-#define DIALOGUE_BOTTOM 62
+// The lowest value that still leaves room for two lines plus the drift on the
+// way out, given the box starts at the top of the screen. Tightening the line
+// pitch is what allowed this to come up from 62: two lines now need 44px rather
+// than 52, and the eight pixels that freed went straight into clearing the
+// eyes, which a plate used to overlap slightly.
+#define DIALOGUE_BOTTOM 54
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
@@ -1570,7 +1580,9 @@ static void update_alert(struct zmk_widget_eyes_status *widget, uint8_t wpm) {
             lv_timer_pause(nag_timer);
         }
 
-        SAY_ONE_OF(widget, DIALOGUE_ALERT, DIALOGUE_PRIO_CHATTER);
+        if (rnd() % 100 < ALERT_CHANCE_PCT) {
+            SAY_ONE_OF(widget, DIALOGUE_ALERT, DIALOGUE_PRIO_CHATTER);
+        }
     } else if (alert_armed && wpm <= WPM_ALERT_OFF) {
         alert_armed = false;
 
@@ -1650,7 +1662,7 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
     // Measured rather than guessed. A plate is the font's line box plus its
     // padding, and stacking by exactly that keeps consecutive lines touching
     // without either a gap between them or an overlap.
-    const int16_t line_h = lv_font_get_line_height(&Fredoka_SemiBold_20) + 2 * DIALOGUE_PAD;
+    const int16_t line_h = lv_font_get_line_height(&Fredoka_SemiBold_20) + 2 * DIALOGUE_PAD_V;
     dialogue_line_h = line_h;
 
     for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
@@ -1666,7 +1678,8 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
         // a line crosses the eyes.
         lv_obj_set_style_bg_color(o, lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(o, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(o, DIALOGUE_PAD, LV_PART_MAIN);
+        lv_obj_set_style_pad_hor(o, DIALOGUE_PAD_H, LV_PART_MAIN);
+        lv_obj_set_style_pad_ver(o, DIALOGUE_PAD_V, LV_PART_MAIN);
         lv_obj_set_width(o, LV_SIZE_CONTENT);
 
         // Right edges flush to a common margin, so lines stack against it and
@@ -1695,7 +1708,8 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_obj_set_style_text_color(widget->zzz[i], lv_color_white(), LV_PART_MAIN);
         lv_obj_set_style_bg_color(widget->zzz[i], lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(widget->zzz[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(widget->zzz[i], DIALOGUE_PAD, LV_PART_MAIN);
+        lv_obj_set_style_pad_hor(widget->zzz[i], DIALOGUE_PAD_H, LV_PART_MAIN);
+        lv_obj_set_style_pad_ver(widget->zzz[i], DIALOGUE_PAD_V, LV_PART_MAIN);
         lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i],
                      DIALOGUE_BOTTOM - dialogue_line_h - zy[i]);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
