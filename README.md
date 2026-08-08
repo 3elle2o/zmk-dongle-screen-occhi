@@ -320,11 +320,12 @@ The font was generated from the upstream variable font by instancing `wght=600 w
 hand-editing it:
 
 ```
-lv_font_conv --font Fredoka-SemiBold.ttf -r 0x20-0x21,0x25,0x30-0x39,0x61-0x7A \
+lv_font_conv --font Fredoka-SemiBold.ttf -r 0x20-0x21,0x25,0x2E,0x30-0x39,0x3F,0x61-0x7A \
   --size 20 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h -o Fredoka_SemiBold_20.c
 ```
 
-**The subset is space, `!`, `%`, digits and `a-z` — there is no uppercase.** Every label drawn in
+**The subset is space, `!`, `%`, `.`, digits, `?` and `a-z` — there is no uppercase, and no
+punctuation beyond those three.** Every label drawn in
 this font must be lowercase; an uppercase character renders as nothing at all. That is a silent
 failure, so widen the range above before introducing one rather than after wondering where the
 text went.

@@ -121,20 +121,23 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // which is a little over twenty lowercase characters. Nothing warns about
 // overrunning it, so measure a long one rather than counting on the estimate.
 //
-// The font carries no punctuation beyond "!" - a comma or a full stop would
-// render as nothing at all - so lines are written without it.
+// The font carries only "!", "." and "?" of punctuation. Anything else - a
+// comma, an apostrophe - renders as nothing at all, silently, so a line wanting
+// one needs the font regenerating first. See the README for the command.
 
 // Power-up, and every return from idle.
 static const char *const DIALOGUE_WAKE[] = {
     "im awake now",
     "hello there",
     "why are we still here\njust to suffer",
+    "wazaaaap",
+    "yo",
+    "im alive",
 };
 
 // Typing has started.
 static const char *const DIALOGUE_ALERT[] = {
-    "!",
-    "waow",
+    "!", "!!", "!!!", "waow", "ooh", "oh", "ah", "?", "mhm", "hmm",
 };
 
 // Impatience, once typing has stopped for a while. Rolled each time typing
@@ -144,6 +147,11 @@ static const char *const DIALOGUE_NAG[] = {
     "are u gonna start\ntyping or what",
     "im hungry",
     "what now",
+    "...",
+    "hmm",
+    "are we there yet",
+    "what time is it",
+    "lets grab some food",
 };
 // A fresh delay is drawn for each pause rather than always landing on the same
 // beat, so it does not read as a countdown you can predict.
