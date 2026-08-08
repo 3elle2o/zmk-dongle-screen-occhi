@@ -100,8 +100,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // well below where it triggers.
 #define WPM_SQUEEZE_ON 50
 #define WPM_SQUEEZE_OFF 43
-#define WPM_CONFUSED_ON 80
-#define WPM_CONFUSED_OFF 72
+#define WPM_CONFUSED_ON 90
+#define WPM_CONFUSED_OFF 82
 
 // A "!" that pops up the moment typing starts, then takes itself away. Not a
 // state like the expressions - a reaction, so it fires on the way past 5wpm
