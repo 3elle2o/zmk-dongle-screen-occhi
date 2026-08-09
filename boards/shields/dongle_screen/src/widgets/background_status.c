@@ -30,8 +30,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // One shape at a range of sizes, rather than several shapes. A four-pointed
 // star is legible down to a few pixels, where anything more detailed turns to
 // mush, and keeping to one keeps the point maths in a single place.
-#define BG_R_MIN 3
-#define BG_R_MAX 12
+#define BG_R_MIN 6
+#define BG_R_MAX 18
 // Waist radius as a share of the tip radius. Lower is spikier; much above this
 // and the star rounds off into a diamond.
 #define BG_WAIST_PCT 34
@@ -59,13 +59,14 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define BG_ANGER_MAX_OPA 210
 #define BG_ANGER_R_MIN 7
 #define BG_ANGER_R_MAX 16
-// Arm half-width where it meets the centre, and again at the tip, both as a
-// share of the reach. Tapering is what stops it reading as a plain plus sign.
-#define BG_ANGER_ARM_PCT 42
-#define BG_ANGER_TIP_PCT 62
-// How far each edge bows out between shoulder and tip, as a share of the reach.
-// Straight arms read as a plain cross; a vein swells along its length.
-#define BG_ANGER_BULGE_PCT 16
+// How near the centre each stroke sags at its middle, against the reach its
+// ends keep. Lower is a deeper bow and a wider hollow.
+#define BG_ANGER_INNER_PCT 52
+// How much of its quarter each stroke actually covers. Below 100 a gap opens at
+// every diagonal, and the gap is the point - at 100 the four strokes meet and
+// it reads as one ring rather than four veins. Round caps eat into it as well,
+// so the gap on screen is always smaller than the angle suggests.
+#define BG_ANGER_SPAN_PCT 65
 
 // Heavier than a sparkle's outline. A sparkle is a glint and can be wiry; this
 // is meant to look like something under pressure.
@@ -110,6 +111,17 @@ static uint32_t rnd_between(uint32_t lo, uint32_t hi) {
     return lo + (sys_rand32_get() % (hi - lo + 1));
 }
 
+#define TRIG_MAX 32767
+
+static int32_t sin_of(int32_t deg) {
+    while (deg < 0) {
+        deg += 360;
+    }
+    return lv_trigo_sin((int16_t)(deg % 360));
+}
+
+static int32_t cos_of(int32_t deg) { return sin_of(deg + 90); }
+
 // Tips on the axes, waists on the diagonals. 181/256 is sin(45), which puts a
 // diagonal point that fraction of the waist radius along each axis. All
 // coordinates are shifted by r so the shape sits inside a box of 2r, which is
@@ -130,44 +142,27 @@ static void build_sparkle(lv_point_precise_t *p, int32_t r) {
     p[8] = p[0];
 }
 
-// Four arms on the diagonals, each swelling between its shoulder and a blunt
-// tip. Built axis-aligned an arm at a time and turned at the end, which is far
-// easier to reason about than writing twenty rotated points by hand.
-static void build_anger(lv_point_precise_t *p, int32_t r) {
-    const int32_t a = r * BG_ANGER_ARM_PCT / 100;
-    const int32_t t = a * BG_ANGER_TIP_PCT / 100;
-    const int32_t b = r * BG_ANGER_BULGE_PCT / 100;
+// One stroke of the mark, k choosing which quarter it faces.
+//
+// Radius is carried out at both ends and in at the middle, following a square
+// so it leaves each end quickly and flattens through the bow. Working in polar
+// keeps this to one expression; the same shape as a Bezier would need control
+// points nobody could read.
+static void build_anger_arc(lv_point_precise_t *p, int32_t r, int k) {
+    const int32_t r_in = r * BG_ANGER_INNER_PCT / 100;
+    const int32_t half = (90 * BG_ANGER_SPAN_PCT / 100) / 2;
+    const int32_t last = BG_ANGER_ARC_PTS - 1;
 
-    // One arm, pointing up: its shoulder, a bowed edge, the flat tip, the other
-    // bowed edge. The shoulder that closes it belongs to the next arm, so each
-    // contributes five points and the four of them meet up.
-    const int32_t ax[5] = {-a, -((a + t) / 2) - b, -t, t, ((t + a) / 2) + b};
-    const int32_t ay[5] = {-a, -(a + r) / 2, -r, -r, -(r + a) / 2};
+    for (int i = 0; i < BG_ANGER_ARC_PTS; i++) {
+        const int32_t deg = 90 * k - half + (2 * half * i) / last;
 
-    int n = 0;
-    for (int k = 0; k < 4; k++) {
-        for (int i = 0; i < 5; i++) {
-            int32_t x = ax[i];
-            int32_t y = ay[i];
+        // (2i/last - 1) squared, kept in integers by scaling both terms.
+        const int32_t t = 2 * i - last;
+        const int32_t rad = r_in + ((r - r_in) * t * t) / (last * last);
 
-            // A quarter turn per arm.
-            for (int q = 0; q < k; q++) {
-                const int32_t nx = -y;
-                y = x;
-                x = nx;
-            }
-
-            // Then 45 degrees for the mark as a whole, so the arms lie on the
-            // diagonals: it is a cross, not a plus. Rotating points rather than
-            // the object keeps this an ordinary polyline - a transform would
-            // have LVGL render every one on its own layer for nothing.
-            p[n].x = r + ((x - y) * 181) / 256;
-            p[n].y = r + ((x + y) * 181) / 256;
-            n++;
-        }
+        p[i].x = r + (rad * cos_of(deg)) / TRIG_MAX;
+        p[i].y = r + (rad * sin_of(deg)) / TRIG_MAX;
     }
-
-    p[n] = p[0];
 }
 
 static void sparkle_opa_cb(void *var, int32_t v) {
@@ -213,7 +208,7 @@ static const char *const BG_SYMBOL_CHARS[] = {"&", "[", "]", "?", "#", "@", "*",
 
 // Starts one mark pulsing: invisible, then breathing between nothing and its
 // peak forever, offset so the group never beats in unison.
-static void pulse(lv_obj_t *o, lv_opa_t peak, uint32_t cycle_ms) {
+static void pulse(lv_obj_t *o, lv_opa_t peak, uint32_t cycle_ms, uint32_t delay_ms) {
     lv_anim_delete(o, sparkle_opa_cb);
     lv_obj_set_style_opa(o, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
@@ -223,7 +218,7 @@ static void pulse(lv_obj_t *o, lv_opa_t peak, uint32_t cycle_ms) {
     lv_anim_set_var(&a, o);
     lv_anim_set_exec_cb(&a, sparkle_opa_cb);
     lv_anim_set_values(&a, LV_OPA_TRANSP, peak);
-    lv_anim_set_delay(&a, rnd_between(0, cycle_ms));
+    lv_anim_set_delay(&a, delay_ms);
     lv_anim_set_time(&a, cycle_ms / 2);
     lv_anim_set_playback_time(&a, cycle_ms / 2);
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
@@ -380,7 +375,9 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
         quiet(widget->sparkle[i]);
     }
     for (int i = 0; i < BG_ANGER_MARKS; i++) {
-        quiet(widget->anger[i]);
+        for (int j = 0; j < BG_ANGER_ARCS; j++) {
+            quiet(widget->anger[i][j]);
+        }
     }
     for (int i = 0; i < BG_SYMBOLS; i++) {
         quiet(widget->symbol[i]);
@@ -397,20 +394,27 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
             lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
                            (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
-            pulse(o, BG_PEAK_OPA, BG_BURST_MS - BG_IN_MS);
+            pulse(o, BG_PEAK_OPA, BG_BURST_MS - BG_IN_MS, rnd_between(0, BG_BURST_MS - BG_IN_MS));
         }
     } else if (effect == BG_EFFECT_ANGER) {
         for (int i = 0; i < BG_ANGER_MARKS; i++) {
             const int32_t r = (int32_t)rnd_between(BG_ANGER_R_MIN, BG_ANGER_R_MAX);
-            lv_obj_t *o = widget->anger[i];
+            const int32_t x = (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r;
+            const int32_t y = (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r;
+            // One delay for the whole mark: its four strokes are one symbol and
+            // have to breathe together, or it reads as four things flickering.
+            const uint32_t delay = rnd_between(0, BG_PULSE_MS);
 
-            build_anger(widget->anger_pts[i], r);
-            lv_line_set_points(o, widget->anger_pts[i], BG_ANGER_PTS);
-            lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
-            lv_obj_set_style_line_width(o, BG_ANGER_LINE_W(r), LV_PART_MAIN);
-            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
-                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
-            pulse(o, BG_ANGER_MAX_OPA, BG_PULSE_MS);
+            for (int j = 0; j < BG_ANGER_ARCS; j++) {
+                lv_obj_t *o = widget->anger[i][j];
+
+                build_anger_arc(widget->anger_pts[i][j], r, j);
+                lv_line_set_points(o, widget->anger_pts[i][j], BG_ANGER_ARC_PTS);
+                lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
+                lv_obj_set_style_line_width(o, BG_ANGER_LINE_W(r), LV_PART_MAIN);
+                lv_obj_set_pos(o, x, y);
+                pulse(o, BG_ANGER_MAX_OPA, BG_PULSE_MS, delay);
+            }
         }
     } else if (effect == BG_EFFECT_SYMBOLS) {
         for (int i = 0; i < BG_SYMBOLS; i++) {
@@ -421,9 +425,9 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             // number. Position, character and phase carry the variety instead.
             lv_label_set_text(o,
                               BG_SYMBOL_CHARS[rnd_between(0, ARRAY_SIZE(BG_SYMBOL_CHARS) - 1)]);
-            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - 12),
-                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - 20));
-            pulse(o, BG_SYMBOL_MAX_OPA, BG_PULSE_MS);
+            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - 30),
+                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - 44));
+            pulse(o, BG_SYMBOL_MAX_OPA, BG_PULSE_MS, rnd_between(0, BG_PULSE_MS));
         }
     }
 }
@@ -540,21 +544,23 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
     // behind the eyes, which is the point - the face shouts, this is the air
     // around it.
     for (int i = 0; i < BG_ANGER_MARKS; i++) {
-        lv_obj_t *o = lv_line_create(widget->obj);
-        widget->anger[i] = o;
+        for (int j = 0; j < BG_ANGER_ARCS; j++) {
+            lv_obj_t *o = lv_line_create(widget->obj);
+            widget->anger[i][j] = o;
 
-        lv_obj_remove_style_all(o);
-        lv_obj_set_style_line_color(o, lv_color_hex(BG_ANGER_COLOR), LV_PART_MAIN);
-        lv_obj_set_style_line_rounded(o, true, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
-        lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_style_all(o);
+            lv_obj_set_style_line_color(o, lv_color_hex(BG_ANGER_COLOR), LV_PART_MAIN);
+            lv_obj_set_style_line_rounded(o, true, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
+            lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     for (int i = 0; i < BG_SYMBOLS; i++) {
         lv_obj_t *o = lv_label_create(widget->obj);
         widget->symbol[i] = o;
 
-        lv_obj_set_style_text_font(o, &Fredoka_SemiBold_20, LV_PART_MAIN);
+        lv_obj_set_style_text_font(o, &Fredoka_SemiBold_40, LV_PART_MAIN);
         lv_obj_set_style_text_color(o, lv_color_hex(BG_SYMBOL_COLOR), LV_PART_MAIN);
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     }

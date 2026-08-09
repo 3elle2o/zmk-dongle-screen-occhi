@@ -389,6 +389,7 @@ The module is MIT, **except** the bundled font:
 | --- | --- |
 | Everything else | MIT |
 | `boards/shields/dongle_screen/src/fonts/Fredoka_SemiBold_20.c` | SIL OFL 1.1 |
+| `boards/shields/dongle_screen/src/fonts/Fredoka_SemiBold_40.c` | SIL OFL 1.1 |
 | `boards/shields/dongle_screen/src/fonts/Fredoka-OFL.txt` | the OFL licence text itself |
 
 [Fredoka](https://github.com/hafontia/Fredoka-One) is Copyright 2016 The Fredoka Project Authors,
@@ -408,7 +409,14 @@ lv_font_conv --font Fredoka-SemiBold.ttf -r 0x20-0x21,0x25,0x2E,0x30-0x39,0x3F,0
   --size 20 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h -o Fredoka_SemiBold_20.c
 ```
 
-**The subset is space, `!`, `%`, `.`, digits, `?` and `a-z` — there is no uppercase, and no
+There is a second cut at 40px carrying only the punctuation the background's symbols use, since a
+label's size is its font and scaling a 20px glyph up would leave it soft:
+
+```
+lv_font_conv --font Fredoka-SemiBold.ttf --symbols '&[]?#@*+/<>={};:~^%$'   --size 40 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h -o Fredoka_SemiBold_40.c
+```
+
+**The 20px subset is space, `!`, `%`, `.`, digits, `?` and `a-z` — there is no uppercase, and no
 punctuation beyond those three.** Every label drawn in
 this font must be lowercase; an uppercase character renders as nothing at all. That is a silent
 failure, so widen the range above before introducing one rather than after wondering where the

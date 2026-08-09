@@ -13,7 +13,7 @@
 
 // Enough to read as a scattering rather than a handful, few enough that they
 // stay incidental.
-#define BG_SPARKLES 10
+#define BG_SPARKLES 6
 
 // Four tips and four waists, plus a repeat of the first point to close the
 // outline.
@@ -24,14 +24,20 @@
 // turning the top of the screen solid.
 #define BG_STRESS_LINES 16
 
-// The popping-vein cross that hangs in the air around an angry character.
-// Twenty points - four arms, each a shoulder, two bowed edges and a flat tip -
-// plus a repeat of the first to close it.
-#define BG_ANGER_MARKS 6
-#define BG_ANGER_PTS 21
+// The popping-vein mark that hangs in the air around an angry character.
+//
+// Four separate strokes with a hollow between them, not one closed outline:
+// each bows inward, and its ends reach out toward the diagonals. That means
+// four line objects per mark rather than one, since lv_line draws a single
+// continuous polyline - which is why there are four marks rather than the six
+// the other effects use.
+#define BG_ANGER_MARKS 4
+#define BG_ANGER_ARCS 4
+#define BG_ANGER_ARC_PTS 9
 
-// Loose punctuation drifting about behind the symbol layer.
-#define BG_SYMBOLS 8
+// Loose punctuation drifting about behind the symbol layer. Few and large
+// rather than many and small - at 40px each one is legible as a character.
+#define BG_SYMBOLS 5
 
 struct zmk_widget_background {
     sys_snode_t node;
@@ -45,8 +51,8 @@ struct zmk_widget_background {
     lv_obj_t *stress_grad;
     lv_obj_t *stress[BG_STRESS_LINES];
 
-    lv_obj_t *anger[BG_ANGER_MARKS];
-    lv_point_precise_t anger_pts[BG_ANGER_MARKS][BG_ANGER_PTS];
+    lv_obj_t *anger[BG_ANGER_MARKS][BG_ANGER_ARCS];
+    lv_point_precise_t anger_pts[BG_ANGER_MARKS][BG_ANGER_ARCS][BG_ANGER_ARC_PTS];
 
     lv_obj_t *symbol[BG_SYMBOLS];
     lv_point_precise_t stress_pts[BG_STRESS_LINES][2];
