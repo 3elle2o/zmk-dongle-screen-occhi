@@ -400,15 +400,22 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             lv_line_set_points(o, widget->pts[i], BG_SPARKLE_PTS);
             lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
             lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
-            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
-                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
+            // The top-left corner is what is chosen, not the centre. Picking a
+            // centre and subtracting the radius lets a mark near an edge start
+            // at a negative coordinate, and the parent clips whatever falls
+            // outside it - which is most of why these came back cut.
+            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - 2 * r),
+                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - 2 * r));
             pulse(o, BG_PEAK_OPA, BG_BURST_MS - BG_IN_MS, rnd_between(0, BG_BURST_MS - BG_IN_MS));
         }
     } else if (effect == BG_EFFECT_ANGER) {
         for (int i = 0; i < BG_ANGER_MARKS; i++) {
             const int32_t r = (int32_t)rnd_between(BG_ANGER_R_MIN, BG_ANGER_R_MAX);
-            const int32_t x = (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r;
-            const int32_t y = (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r;
+            // Top-left, so the whole 2r box stays inside the parent. Choosing
+            // a centre and subtracting r put marks near an edge at negative
+            // coordinates, where the parent simply cut them off.
+            const int32_t x = (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - 2 * r);
+            const int32_t y = (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - 2 * r);
             // One delay for the whole mark: its four strokes are one symbol and
             // have to breathe together, or it reads as four things flickering.
             const uint32_t delay = rnd_between(0, BG_PULSE_MS);
