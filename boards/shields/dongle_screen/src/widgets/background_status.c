@@ -247,6 +247,7 @@ static uint8_t stress_intensity(uint8_t wpm) {
 
 struct bg_state {
     uint8_t wpm;
+    uint8_t layer;
 };
 
 // What is on screen right now, as opposed to what the typing speed is asking
@@ -282,8 +283,16 @@ static void bg_apply(void *var, int32_t v) {
     }
 }
 
+// Defined below, alongside the rest of the effect machinery.
+static void bg_set_effect(uint8_t effect);
+
 static void bg_update_cb(struct bg_state state) {
     static uint8_t target;
+
+    // Layer first, then the typing ramp. Both run here rather than in their own
+    // listeners so that everything touching LVGL is on the display thread.
+    bg_set_effect(state.layer < ARRAY_SIZE(layer_effect) ? layer_effect[state.layer]
+                                                         : BG_EFFECT_NONE);
     const uint8_t now = stress_intensity(state.wpm);
 
     if (now == target) {
@@ -315,13 +324,22 @@ static void bg_update_cb(struct bg_state state) {
 
 static struct bg_state bg_get_state(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
-    // Read from the API rather than the event payload, so the one-off init call
-    // that arrives with a null event needs no special case.
-    return (struct bg_state){.wpm = (uint8_t)zmk_wpm_get_state()};
+    // Read from the APIs rather than the event payload, so the one-off init
+    // call that arrives with a null event needs no special case, and one
+    // callback can serve both subscriptions.
+    return (struct bg_state){
+        .wpm = (uint8_t)zmk_wpm_get_state(),
+        .layer = (uint8_t)zmk_keymap_highest_layer_active(),
+    };
 }
 
+// Both subscriptions go through the display listener, which marshals onto the
+// display work queue. That is not a formality: a raw ZMK_LISTENER runs on
+// whichever thread raised the event, and touching LVGL from there races the
+// display thread already inside it.
 ZMK_DISPLAY_WIDGET_LISTENER(widget_background, struct bg_state, bg_update_cb, bg_get_state)
 ZMK_SUBSCRIPTION(widget_background, zmk_wpm_state_changed);
+ZMK_SUBSCRIPTION(widget_background, zmk_layer_state_changed);
 
 // Scatters and starts whichever set of marks the effect uses.
 static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
@@ -438,17 +456,7 @@ void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget) {
     bg_set_effect(BG_EFFECT_NONE);
 }
 
-static int bg_layer_listener(const zmk_event_t *eh) {
-    ARG_UNUSED(eh);
 
-    const uint8_t layer = zmk_keymap_highest_layer_active();
-    bg_set_effect(layer < ARRAY_SIZE(layer_effect) ? layer_effect[layer] : BG_EFFECT_NONE);
-
-    return ZMK_EV_EVENT_BUBBLE;
-}
-
-ZMK_LISTENER(widget_background_layer, bg_layer_listener);
-ZMK_SUBSCRIPTION(widget_background_layer, zmk_layer_state_changed);
 
 int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
