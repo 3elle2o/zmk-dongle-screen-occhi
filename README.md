@@ -1,11 +1,20 @@
 # ZMK Dongle Screen YADS (Yet another Dongle Screen)
 
-> **This is a fork.** It branches from upstream's `upgrade-4.1` (Zephyr 4.1 / LVGL 9) and adds an
-> animated eyes widget that replaces the layer label, along with a slimmer output widget and a
-> one-line battery indicator. See [Animated eyes](#animated-eyes) and
-> [Licensing](#licensing) — the bundled font is OFL, not MIT.
+> **This is a fork.** Everything below the fold is upstream's work; this notice covers only what
+> has been added on top.
 >
-> Upstream: [janpfischer/zmk-dongle-screen](https://github.com/janpfischer/zmk-dongle-screen)
+> It branches from upstream's `upgrade-4.1` (Zephyr 4.1 / LVGL 9) and turns the status screen into
+> a desk buddy: a pair of animated eyes in place of the layer label, short lines of dialogue beside
+> them, and a background layer behind both. The output and battery widgets were reworked to make
+> room. See [Desk buddy](#desk-buddy).
+>
+> Also note [Licensing](#licensing) — the bundled font is OFL, not MIT, and its character set is
+> lowercase only.
+>
+> Upstream: [janpfischer/zmk-dongle-screen](https://github.com/janpfischer/zmk-dongle-screen) by
+> [janpfischer](https://github.com/janpfischer), who wrote the module this is built on — the
+> shield, the display driver glue, the brightness and ambient light handling, and every widget the
+> fork did not replace.
 
 This project provides a Zephyr module for a dongle display shield based on the ST7789V display and the Seeeduino XAIO BLE microcontroller and the LVGL graphics library.  
 The display can take advantage of a ambient light sensor to dim and brighten the display automatically.  
@@ -43,12 +52,14 @@ This repository only contains a module and no build guides or suggestions.
 This module provides several widgets to visualize the current state of your ZMK-based keyboard:
 
 - **Output Widget**  
-  Indicates the current output state of the keyboard (USB or BLE profiles). The currently used interface (USB or BLE) is indicated with an arrow.
-  - **USB:**
+  Indicates the current output state of the keyboard. **Changed in this fork:** only the live
+  transport is drawn, on one line and in lower case, rather than both with an arrow marking the
+  active one — the inactive one told you nothing you could not infer and cost a whole row.
+  - **usb:**
     - **White:** USB HID is ready and active (dongle is connected to a computer and working as a keyboard).
     - **Red:** USB HID is not ready (dongle is powered, e.g. via wall plug or power bank, but not connected to a computer).
-  - **BLE:**  
-    For the currently selected Bluetooth profile (the number is shown in the next line):
+  - **ble:**  
+    For the currently selected Bluetooth profile, whose number follows on the same line:
     - **Green:** Connected (active BLE connection established)
     - **Blue:** Bonded (device is paired, but not currently connected)
     - **White:** Profile is free (no device paired or connected for this profile)
@@ -63,7 +74,10 @@ This module provides several widgets to visualize the current state of your ZMK-
   Displays the current words per minute (WPM) typing speed in real time.
 
 - **Battery Widget**  
-  Shows the battery level of the dongle and/or the keyboard, if supported.
+  Shows the battery level of the dongle and/or the keyboard, if supported. **Changed in this
+  fork:** drawn as a battery icon with the figure beside it rather than a bar, one cell per half on
+  a single row. Grey `x` when a half is not reporting, red at or below 10%, yellow at or below 20%,
+  white above.
 
 ## General Features
 
@@ -280,22 +294,60 @@ west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dong
 
 _Note: a matching entry for `-DSHIELD` must already be present in your `build.yaml` in your configuration, which is given as the `-DZMK_CONFIG` argument._
 
-## Animated eyes
+## Desk buddy
 
-Set `CONFIG_DONGLE_SCREEN_EYES_ACTIVE=y` (and `CONFIG_DONGLE_SCREEN_LAYER_ACTIVE=n`, or the layer
-label draws underneath) to replace the layer text with a pair of animated eyes.
+Three layers this fork adds, drawn back to front: a **background** of atmosphere, the **eyes**, and
+**dialogue** over the top. Each is independent — its own widget, its own event subscriptions, its
+own config option — so any of them can be left off.
 
-They are drawn as two white shapes on black — no sclera, so an eye is just its pupil. Every
-expression is either a rounded bar or an `lv_line` polyline, so the whole vocabulary needs two
-object types per eye and no image assets.
+```
+CONFIG_DONGLE_SCREEN_EYES_ACTIVE=y
+CONFIG_DONGLE_SCREEN_LAYER_ACTIVE=n     # or the layer label draws underneath the eyes
+CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE=y
+```
 
-Off the base layer, the expression reports the active layer. On the base layer the eyes follow
+### Eyes
+
+Two white shapes on black — no sclera, so an eye is just its pupil. Every expression is a rounded
+bar or an `lv_line` polyline, some filled by a scanline pass over a canvas, so the whole vocabulary
+needs no image assets.
+
+Off the base layer the expression reports the active layer. On the base layer the eyes follow
 activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
-20s; a strained squeeze past 40wpm; and dizzy spirals past 60. Every threshold releases well below
+20s; a strained squeeze past 57wpm; and dizzy spirals past 87. Every threshold releases well below
 where it triggers, since ZMK's WPM estimate bounces.
 
-Tuning lives in `#define`s at the top of `src/widgets/eyes_status.c`, and the expression-to-layer
-mapping is a single table.
+The resting face is not static. It blinks, glances around, and every 40–90s stands in a **quirk** —
+a hollow variation on neutral: larger and looking up, sliced flat and looking down, a small circle,
+a squint, or a sparkle cut clean through. Quirks are skipped while asleep or typing hard, since
+neither would show one.
+
+### Dialogue
+
+Short lines beside the face, typed out a character at a time, held, then fading as they drift
+upward. Lines are grouped by the event that prompts them — waking, typing, waiting — and one is
+picked at random, so adding a variation is a line in a list.
+
+A remark is written in the bottom slot and pushed up if a second line follows, terminal fashion.
+Each line carries its own black plate sized to its own text, so it reads as a highlight and stays
+legible wherever it crosses the eyes.
+
+### Background
+
+Behind everything, and deliberately dimmer than the rest — a background that competes for attention
+is not a background. A burst of gold sparkles on power-up, and purple stress lines under a blue
+wash that swell as typing speed climbs. Their thresholds are matched to the eyes' own, so the face
+and the background agree about what fast means.
+
+### Tuning
+
+`#define`s at the top of each widget source. The expression-to-layer mapping is a single table, and
+the dialogue lines are three lists.
+
+Two constraints worth knowing before writing dialogue: a line has about 210px, a little over twenty
+lowercase characters, before it is clipped; and the font has **no uppercase** and only `!`, `.` and
+`?` of punctuation. Anything outside that set renders as nothing at all, silently. See
+[Licensing](#licensing) for the regeneration command.
 
 ## Licensing
 
