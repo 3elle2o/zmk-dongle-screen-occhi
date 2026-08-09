@@ -34,10 +34,10 @@
 </g>
 <g transform="translate(230,176)">
 <rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
-<polygon points="91,92 91,93 85,101 78,107 69,109 69,109 60,107 52,101 46,94 45,85 45,69 91,92" fill="#fff" fill-rule="evenodd"/>
-<polyline points="91,92 91,93 85,101 78,107 69,109 69,109 60,107 52,101 46,94 45,85 45,69 91,92" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
-<polygon points="185,69 185,85 183,93 177,101 170,107 161,109 161,109 152,107 144,101 138,94 137,93 185,69" fill="#fff" fill-rule="evenodd"/>
-<polyline points="185,69 185,85 183,93 177,101 170,107 161,109 161,109 152,107 144,101 138,94 137,93 185,69" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="91,78 91,79 85,87 78,93 69,95 69,95 60,93 52,87 46,80 45,71 45,55 91,78" fill="#fff" fill-rule="evenodd"/>
+<polyline points="91,78 91,79 85,87 78,93 69,95 69,95 60,93 52,87 46,80 45,71 45,55 91,78" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="185,55 185,71 183,79 177,87 170,93 161,95 161,95 152,93 144,87 138,80 137,79 185,55" fill="#fff" fill-rule="evenodd"/>
+<polyline points="185,55 185,71 183,79 177,87 170,93 161,95 161,95 152,93 144,87 138,80 137,79 185,55" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
 <text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">angry</text>
 </g>
 <g transform="translate(460,176)">

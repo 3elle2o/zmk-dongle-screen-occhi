@@ -179,7 +179,7 @@ EXPR = {
     "shock":          ("bar", 24, 24, 0, 0, 12, 0, 0, False, 0),
     "sleepy":         ("arc", EYE_W, 30, 0, 12, 0, 0, 0, False, 0),
     "unamused":       ("lidded", EYE_W + LID_TAIL, EYE_H // 2, 0, 0, 0, 9, 6, True, 0),
-    "angry":          ("angry", EYE_W, EYE_H, 0, 0, 0, 9, 0, True, 0),
+    "angry":          ("angry", EYE_W, EYE_H, 0, -14, 0, 9, 0, True, 0),
     "confused":       ("spiral", 86, 86, 0, 0, 0, 8, 6, False, 0),
     "neutral_up":     ("bar", EYE_W * QUIRK_UP_PCT // 100, EYE_H * QUIRK_UP_PCT // 100,
                        0, -7, EYE_R * QUIRK_UP_PCT // 100, 0, 0, False, QUIRK_OUTLINE_W),

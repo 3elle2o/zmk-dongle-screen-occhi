@@ -438,7 +438,11 @@ static const struct expression expressions[EXPR_COUNT] = {
     // for a mood drifting in, but reads as lag when it is answering a keypress.
     [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H / 2, 0, 0, 0, false, 9, 6, 0, true,
                        80},
-    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
+    // Lifted 14px, which is how far the cut leaves its ink below the centre of
+    // a box still sized for the whole eye. Every other expression's ink is
+    // centred on its box, so without this the scowl simply sits lower than the
+    // rest of the vocabulary for no reason anyone chose.
+    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, -14, 0, false, 9, 0, 0, true, 80},
     // Wider box means wider coil spacing, so the stroke goes up with it to
     // hold the reference's 1:1 stroke-to-gap.
     // Deliberately excluded from the widening. EYE_DX + 6 puts these 52px from
