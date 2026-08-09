@@ -325,8 +325,8 @@ enum eye_shape {
 // lands it between shock's 24 and neutral's 56.
 #define QUIRK_SMALL_D (EYE_W * QUIRK_SMALL_PCT / 100)
 
-// Height of the shut eye in a wink. Below twice the outline width, so the
-// border meets in the middle and fills it.
+// Height of the shut eye in a wink: a lid, not a squint. Its radius is
+// neutral's, which LVGL clamps to half of this, so it comes out a flat lozenge.
 #define WINK_SHUT_H 12
 
 // A sparkle punched clean through the eye: centred, filling nearly its whole
@@ -463,11 +463,13 @@ static const struct expression expressions[EXPR_COUNT] = {
     // resized rather than new shapes; the cropped one is neutral's own outline
     // with a flat slice off the top, so its curve is neutral's exactly.
     // The only expression whose two eyes differ in shape rather than merely
-    // being mirrored. The open one is neutral; the shut one is the same bar
-    // squashed until its border fills it, which is what makes it read as
-    // closed rather than as a narrow ring.
-    [EXPR_WINK] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, false,
-                   .outline_w = QUIRK_OUTLINE_W, .wink = 2},
+    // being mirrored: the open one is neutral exactly, the other a thin bar.
+    //
+    // Solid, unlike the other quirks. Hollow is what makes those read as the
+    // same eyes doing something, but a wink already reads that way on its own -
+    // one eye is neutral, unaltered - and an open eye drawn as a ring beside a
+    // shut one looks like two different eyes rather than one blinking.
+    [EXPR_WINK] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, false, .wink = 2},
     // Hollow here means simply not filling the traced outline: the stroke that
     // used to smooth the fill's stepped edge becomes the whole shape, so the
     // sliced top stays exactly where it was.

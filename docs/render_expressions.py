@@ -183,7 +183,7 @@ EXPR = {
     "angry":          ("angry", EYE_W, EYE_H, 0, -14, 0, 9, 0, True, 0),
     "twinkle":        ("twinkle", EYE_W, EYE_H, 0, 0, 0, 9, 0, True, 0),
     "confused":       ("spiral", 86, 86, 0, 0, 0, 8, 6, False, 0),
-    "wink":           ("bar", EYE_W, EYE_H, 0, 0, EYE_R, 0, 0, False, QUIRK_OUTLINE_W),
+    "wink":           ("bar", EYE_W, EYE_H, 0, 0, EYE_R, 0, 0, False, 0),
     "neutral_down":   ("cropped", EYE_W, EYE_H, 0, 7, 0, QUIRK_OUTLINE_W, 0, False, 0),
     "neutral_small":  ("bar", QUIRK_SMALL_D, QUIRK_SMALL_D, 0, 0, LV_RADIUS_CIRCLE,
                        0, 0, False, QUIRK_OUTLINE_W),
