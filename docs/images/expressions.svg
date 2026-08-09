@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 528" width="920">
+<rect width="920" height="528" fill="#111"/>
+<g transform="translate(0,0)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<rect x="41" y="37" width="56" height="76" rx="24" fill="#fff"/>
+<rect x="133" y="37" width="56" height="76" rx="24" fill="#fff"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">neutral</text>
+</g>
+<g transform="translate(230,0)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polyline points="48,44 90,75 48,106" fill="none" stroke="#fff" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="182,44 140,75 182,106" fill="none" stroke="#fff" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">squeezed</text>
+</g>
+<g transform="translate(460,0)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<rect x="57" y="63" width="24" height="24" rx="12" fill="#fff"/>
+<rect x="149" y="63" width="24" height="24" rx="12" fill="#fff"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">shock</text>
+</g>
+<g transform="translate(690,0)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polyline points="48,79 55,86 62,92 69,95 76,92 83,86 90,79" fill="none" stroke="#fff" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="140,79 147,86 154,92 161,95 168,92 175,86 182,79" fill="none" stroke="#fff" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">sleepy</text>
+</g>
+<g transform="translate(0,176)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polygon points="94,60 80,60 80,66 78,74 72,82 65,88 56,90 56,90 47,88 39,82 33,75 32,66 32,60 94,60" fill="#fff" fill-rule="evenodd"/>
+<polyline points="94,60 80,60 80,66 78,74 72,82 65,88 56,90 56,90 47,88 39,82 33,75 32,66 32,60 94,60" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="198,60 184,60 184,66 182,74 176,82 169,88 160,90 160,90 151,88 143,82 137,75 136,66 136,60 198,60" fill="#fff" fill-rule="evenodd"/>
+<polyline points="198,60 184,60 184,66 182,74 176,82 169,88 160,90 160,90 151,88 143,82 137,75 136,66 136,60 198,60" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">unamused</text>
+</g>
+<g transform="translate(230,176)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polygon points="91,92 91,93 85,101 78,107 69,109 69,109 60,107 52,101 46,94 45,85 45,69 91,92" fill="#fff" fill-rule="evenodd"/>
+<polyline points="91,92 91,93 85,101 78,107 69,109 69,109 60,107 52,101 46,94 45,85 45,69 91,92" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="185,69 185,85 183,93 177,101 170,107 161,109 161,109 152,107 144,101 138,94 137,93 185,69" fill="#fff" fill-rule="evenodd"/>
+<polyline points="185,69 185,85 183,93 177,101 170,107 161,109 161,109 152,107 144,101 138,94 137,93 185,69" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">angry</text>
+</g>
+<g transform="translate(460,176)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polyline points="63,75 63,75 64,76 63,77 61,78 59,78 56,77 55,73 55,69 58,65 63,64 69,63 74,67 77,73 77,80 74,87 67,92 58,94 49,91 42,83 40,72 42,62 50,52 61,48 74,49 85,56 92,69 92,83 87,97 74,106 58,109 42,104 30,92 24,75" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="167,75 167,75 168,76 167,77 165,78 163,78 160,77 159,73 159,69 162,65 167,64 173,63 178,67 181,73 181,80 178,87 171,92 162,94 153,91 146,83 144,72 146,62 154,52 165,48 178,49 189,56 196,69 196,83 191,97 178,106 162,109 146,104 134,92 128,75" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">confused</text>
+</g>
+<g transform="translate(690,176)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<rect x="41" y="28" width="56" height="80" rx="23" fill="none" stroke="#fff" stroke-width="8"/>
+<rect x="133" y="28" width="56" height="80" rx="23" fill="none" stroke="#fff" stroke-width="8"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">neutral_up</text>
+</g>
+<g transform="translate(0,352)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polyline points="45,72 46,63 50,57 86,57 91,62 93,72 93,92 91,100 85,108 78,114 69,116 69,116 60,114 52,108 46,101 45,92 45,72" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="137,72 138,63 142,57 178,57 183,62 185,72 185,92 183,100 177,108 170,114 161,116 161,116 152,114 144,108 138,101 137,92 137,72" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">neutral_down</text>
+</g>
+<g transform="translate(230,352)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<rect x="56" y="62" width="26" height="26" rx="13" fill="none" stroke="#fff" stroke-width="8"/>
+<rect x="148" y="62" width="26" height="26" rx="13" fill="none" stroke="#fff" stroke-width="8"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">neutral_small</text>
+</g>
+<g transform="translate(460,352)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<polygon points="45,65 46,56 52,48 59,42 69,41 69,41 77,42 85,48 91,55 93,65 93,85 91,93 85,101 78,107 69,109 69,109 60,107 52,101 46,94 45,85 45,65 89,75 83,79 81,82 79,84 77,87 75,89 74,93 72,97 69,105 66,97 64,93 62,90 60,87 59,85 57,82 54,79 49,75 54,70 56,67 58,65 60,62 62,60 63,56 65,52 69,45 71,52 73,56 75,59 77,62 78,64 80,67 83,70 89,75" fill="#fff" fill-rule="evenodd"/>
+<polyline points="45,65 46,56 52,48 59,42 69,41 69,41 77,42 85,48 91,55 93,65 93,85 91,93 85,101 78,107 69,109 69,109 60,107 52,101 46,94 45,85 45,65" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="89,75 83,79 81,82 79,84 77,87 75,89 74,93 72,97 69,105 66,97 64,93 62,90 60,87 59,85 57,82 54,79 49,75 54,70 56,67 58,65 60,62 62,60 63,56 65,52 69,45 71,52 73,56 75,59 77,62 78,64 80,67 83,70 89,75" fill="none" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="137,65 138,56 144,48 151,42 161,41 161,41 169,42 177,48 183,55 185,65 185,85 183,93 177,101 170,107 161,109 161,109 152,107 144,101 138,94 137,85 137,65 181,75 175,79 173,82 171,84 169,87 167,89 166,93 164,97 161,105 158,97 156,93 154,90 152,87 151,85 149,82 146,79 141,75 146,70 148,67 150,65 152,62 154,60 155,56 157,52 161,45 163,52 165,56 167,59 169,62 170,64 172,67 175,70 181,75" fill="#fff" fill-rule="evenodd"/>
+<polyline points="137,65 138,56 144,48 151,42 161,41 161,41 169,42 177,48 183,55 185,65 185,85 183,93 177,101 170,107 161,109 161,109 152,107 144,101 138,94 137,85 137,65" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="181,75 175,79 173,82 171,84 169,87 167,89 166,93 164,97 161,105 158,97 156,93 154,90 152,87 151,85 149,82 146,79 141,75 146,70 148,67 150,65 152,62 154,60 155,56 157,52 161,45 163,52 165,56 167,59 169,62 170,64 172,67 175,70 181,75" fill="none" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">neutral_twinkle</text>
+</g>
+<g transform="translate(690,352)">
+<rect x="3" y="3" width="224" height="144" fill="#000" stroke="#2a2a2a"/>
+<rect x="45" y="63" width="48" height="24" rx="20" fill="none" stroke="#fff" stroke-width="8"/>
+<rect x="137" y="63" width="48" height="24" rx="20" fill="none" stroke="#fff" stroke-width="8"/>
+<text x="115" y="166" fill="#ddd" font-family="monospace" font-size="13" text-anchor="middle">neutral_squint</text>
+</g>
+</svg>
