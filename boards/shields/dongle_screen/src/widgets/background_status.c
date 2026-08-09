@@ -63,6 +63,13 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // share of the reach. Tapering is what stops it reading as a plain plus sign.
 #define BG_ANGER_ARM_PCT 42
 #define BG_ANGER_TIP_PCT 62
+// How far each edge bows out between shoulder and tip, as a share of the reach.
+// Straight arms read as a plain cross; a vein swells along its length.
+#define BG_ANGER_BULGE_PCT 16
+
+// Heavier than a sparkle's outline. A sparkle is a glint and can be wiry; this
+// is meant to look like something under pressure.
+#define BG_ANGER_LINE_W(r) (2 + (r) / 5)
 
 // --- Stress lines ---
 //
@@ -123,28 +130,44 @@ static void build_sparkle(lv_point_precise_t *p, int32_t r) {
     p[8] = p[0];
 }
 
-// A cross with four tapered arms, traced from the top of the upper one and
-// round clockwise. Narrower at each tip than where the arms meet, which is the
-// difference between this and a plus sign.
+// Four arms on the diagonals, each swelling between its shoulder and a blunt
+// tip. Built axis-aligned an arm at a time and turned at the end, which is far
+// easier to reason about than writing twenty rotated points by hand.
 static void build_anger(lv_point_precise_t *p, int32_t r) {
     const int32_t a = r * BG_ANGER_ARM_PCT / 100;
     const int32_t t = a * BG_ANGER_TIP_PCT / 100;
+    const int32_t b = r * BG_ANGER_BULGE_PCT / 100;
 
-    const int32_t x[12] = {-t, t, a, r, r, a, t, -t, -a, -r, -r, -a};
-    const int32_t y[12] = {-r, -r, -a, -t, t, a, r, r, a, t, -t, -a};
+    // One arm, pointing up: its shoulder, a bowed edge, the flat tip, the other
+    // bowed edge. The shoulder that closes it belongs to the next arm, so each
+    // contributes five points and the four of them meet up.
+    const int32_t ax[5] = {-a, -((a + t) / 2) - b, -t, t, ((t + a) / 2) + b};
+    const int32_t ay[5] = {-a, -(a + r) / 2, -r, -r, -(r + a) / 2};
 
-    // Turned 45 degrees, so the arms lie on the diagonals: the mark is a cross,
-    // not a plus. Rotating the points rather than the object keeps it a plain
-    // polyline - a transform would push LVGL into rendering the thing on its
-    // own layer for no gain.
-    //
-    // 181/256 is sin(45), and the rotation is symmetric in it, so the tips stay
-    // exactly r from the centre and the shape still fits its old box.
-    for (int i = 0; i < 12; i++) {
-        p[i].x = r + ((x[i] - y[i]) * 181) / 256;
-        p[i].y = r + ((x[i] + y[i]) * 181) / 256;
+    int n = 0;
+    for (int k = 0; k < 4; k++) {
+        for (int i = 0; i < 5; i++) {
+            int32_t x = ax[i];
+            int32_t y = ay[i];
+
+            // A quarter turn per arm.
+            for (int q = 0; q < k; q++) {
+                const int32_t nx = -y;
+                y = x;
+                x = nx;
+            }
+
+            // Then 45 degrees for the mark as a whole, so the arms lie on the
+            // diagonals: it is a cross, not a plus. Rotating points rather than
+            // the object keeps this an ordinary polyline - a transform would
+            // have LVGL render every one on its own layer for nothing.
+            p[n].x = r + ((x - y) * 181) / 256;
+            p[n].y = r + ((x + y) * 181) / 256;
+            n++;
+        }
     }
-    p[12] = p[0];
+
+    p[n] = p[0];
 }
 
 static void sparkle_opa_cb(void *var, int32_t v) {
@@ -384,7 +407,7 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             build_anger(widget->anger_pts[i], r);
             lv_line_set_points(o, widget->anger_pts[i], BG_ANGER_PTS);
             lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
-            lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
+            lv_obj_set_style_line_width(o, BG_ANGER_LINE_W(r), LV_PART_MAIN);
             lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
                            (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
             pulse(o, BG_ANGER_MAX_OPA, BG_PULSE_MS);

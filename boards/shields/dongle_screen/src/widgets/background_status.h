@@ -25,9 +25,10 @@
 #define BG_STRESS_LINES 16
 
 // The popping-vein cross that hangs in the air around an angry character.
-// Twelve points - four tapered arms - plus a repeat of the first to close it.
+// Twenty points - four arms, each a shoulder, two bowed edges and a flat tip -
+// plus a repeat of the first to close it.
 #define BG_ANGER_MARKS 6
-#define BG_ANGER_PTS 13
+#define BG_ANGER_PTS 21
 
 // Loose punctuation drifting about behind the symbol layer.
 #define BG_SYMBOLS 8
