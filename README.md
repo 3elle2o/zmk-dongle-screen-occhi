@@ -8,8 +8,7 @@
 > them, and a background layer behind both. The output and battery widgets were reworked to make
 > room. See [Desk buddy](#desk-buddy).
 >
-> Also note [Licensing](#licensing) — the bundled font is OFL, not MIT, and its character set is
-> lowercase only.
+> Also note [Licensing](#licensing) — the bundled font is OFL, not MIT, and carries no uppercase.
 >
 > Upstream: [janpfischer/zmk-dongle-screen](https://github.com/janpfischer/zmk-dongle-screen) by
 > [janpfischer](https://github.com/janpfischer), who wrote the module this is built on — the
@@ -52,9 +51,8 @@ Two white shapes on black — no sclera, so an eye is just its pupil. Every expr
 bar or an `lv_line` polyline, some filled by a scanline pass over a canvas, so the whole vocabulary
 needs no image assets.
 
-The first seven are states. The five below them are the quirks: transient variations that stand in
-for the resting face, drawn hollow so they read as the same eyes doing something rather than as
-different eyes.
+The first eight are states — what the face is doing. The four after them are quirks that stand in
+for the resting face on their own.
 
 Off the base layer the expression reports the active layer. On the base layer the eyes follow
 activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
@@ -98,10 +96,9 @@ to atmosphere, and the symbol layer has an entry here while having no expression
 `#define`s at the top of each widget source. The expression-to-layer mapping is a single table, and
 the dialogue lines are three lists.
 
-Two constraints worth knowing before writing dialogue: a line has about 210px, a little over twenty
-lowercase characters, before it is clipped; and the font has **no uppercase** and only `!`, `.` and
-`?` of punctuation. Anything outside that set renders as nothing at all, silently. See
-[Licensing](#licensing) for the regeneration command.
+One constraint worth knowing before writing dialogue: a line has about 210px, a little over twenty
+lowercase characters, before it is clipped. Punctuation is fine, but the font has **no uppercase** —
+a capital renders as nothing at all, silently. See [Licensing](#licensing) to widen it.
 
 ## Building a dongle
 
@@ -120,8 +117,8 @@ Three are this fork's and are described under [Desk buddy](#desk-buddy) rather t
 - **Eyes Widget** — animated eyes in place of the layer label, reporting the active layer and
   reacting to idle and typing speed
 - **Dialogue** — short spoken lines beside the face, part of the eyes widget
-- **Background Widget** — a layer behind everything else; sparkles on power-up and stress lines
-  that build with typing speed
+- **Background Widget** — a layer behind everything else: stress lines that build with typing
+  speed, and per-layer atmosphere
 
 The rest are upstream's, two of them altered here.
 
