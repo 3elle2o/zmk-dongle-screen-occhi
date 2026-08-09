@@ -16,40 +16,71 @@
 > shield, the display driver glue, the brightness and ambient light handling, and every widget the
 > fork did not replace.
 
+![The desk buddy at rest, on an Urchin with nice!view halves](/docs/images/dongle.jpg)
+
+The resting face. The expressions, the dialogue and the background are all motion, so a still
+shows the quietest thing the screen does.
+
 This project provides a Zephyr module for a dongle display shield based on the ST7789V display and the Seeeduino XAIO BLE microcontroller and the LVGL graphics library.  
 The display can take advantage of a ambient light sensor to dim and brighten the display automatically.  
-It offers various widgets for current output, displaying layer, mod, WPM, and battery status, as well as brightness adjustments via keyboard, automatic dimming after inactivity, and a customizable status screen for ZMK-based keyboards.
+It offers various widgets for current output, displaying layer, mod, WPM, and battery status, as well as brightness adjustments via keyboard, automatic dimming after inactivity, and a customizable status screen for ZMK-based keyboards. This fork adds three more — animated eyes, dialogue and a background layer.
 
 **This project is inspired by [prospector-zmk-module](https://github.com/carrefinho/prospector-zmk-module) and [zmk-dongle-display](https://github.com/englmaxi/zmk-dongle-display). Thanks for your awesome work!**
 
-## Note on current ZMK main branch
+## Desk buddy
 
-As the ZMK main branch moved to Zephyr 4.1 the latest release of YADS is not compatible with that branch.
-If you want to build the main branch of ZMK please have a look at this [issue](https://github.com/janpfischer/zmk-dongle-screen/issues/29).
+Three layers this fork adds, drawn back to front: a **background** of atmosphere, the **eyes**, and
+**dialogue** over the top. Each is independent — its own widget, its own event subscriptions, its
+own config option — so any of them can be left off.
 
-In short you can use YADS already with Zephyr 4.1 if you are building with the YADS branch `upgrade-4.1`. Furthermore you'll have to adjust your `west.yaml` with the other references and change the board reference in the `build.yaml` to `xiao_ble//zmk` (if not using a nice!nano `nice_nano@2.0.0//zmk`).
+```
+CONFIG_DONGLE_SCREEN_EYES_ACTIVE=y
+CONFIG_DONGLE_SCREEN_LAYER_ACTIVE=n     # or the layer label draws underneath the eyes
+CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE=y
+```
 
-## Demo
+### Eyes
 
-![The desk buddy at rest, on an Urchin with nice!view halves](/docs/images/dongle.jpg)
+Two white shapes on black — no sclera, so an eye is just its pupil. Every expression is a rounded
+bar or an `lv_line` polyline, some filled by a scanline pass over a canvas, so the whole vocabulary
+needs no image assets.
 
-The resting face: neutral eyes, both halves' batteries on the bottom row, and the live connection
-at the right — green for a connected BLE profile. The expressions, the dialogue and the background
-are all motion, so a still shows only the quietest thing the screen does.
+Off the base layer the expression reports the active layer. On the base layer the eyes follow
+activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
+20s; a strained squeeze past 57wpm; and dizzy spirals past 87. Every threshold releases well below
+where it triggers, since ZMK's WPM estimate bounces.
 
-### Upstream's screen
+The resting face is not static. It blinks, glances around, and every 40–90s stands in a **quirk** —
+a hollow variation on neutral: larger and looking up, sliced flat and looking down, a small circle,
+a squint, or a sparkle cut clean through. Quirks are skipped while asleep or typing hard, since
+neither would show one.
 
-> These are **upstream's** screen and videos, showing the stock layout — a layer label, WPM and
-> modifier readouts. This fork replaces most of that with the [desk buddy](#desk-buddy), so they
-> are not what it looks like here.
+### Dialogue
 
-![Sample Screen of zmk-dongle-screen](/docs/images/screen.jpg)
+Short lines beside the face, typed out a character at a time, held, then fading as they drift
+upward. Lines are grouped by the event that prompts them — waking, typing, waiting — and one is
+picked at random, so adding a variation is a line in a list.
 
-<https://github.com/user-attachments/assets/86c33af6-d83e-4e2a-9766-fc8836e896f1>
+A remark is written in the bottom slot and pushed up if a second line follows, terminal fashion.
+Each line carries its own black plate sized to its own text, so it reads as a highlight and stays
+legible wherever it crosses the eyes.
 
-#### Brightness changes with ambient light sensor and screen toggle
+### Background
 
-<https://github.com/user-attachments/assets/3379f79c-af90-4763-8ba5-8a8f34fd66cf>
+Behind everything, and deliberately dimmer than the rest — a background that competes for attention
+is not a background. A burst of gold sparkles on power-up, and purple stress lines under a blue
+wash that swell as typing speed climbs. Their thresholds are matched to the eyes' own, so the face
+and the background agree about what fast means.
+
+### Tuning
+
+`#define`s at the top of each widget source. The expression-to-layer mapping is a single table, and
+the dialogue lines are three lists.
+
+Two constraints worth knowing before writing dialogue: a line has about 210px, a little over twenty
+lowercase characters, before it is clipped; and the font has **no uppercase** and only `!`, `.` and
+`?` of punctuation. Anything outside that set renders as nothing at all, silently. See
+[Licensing](#licensing) for the regeneration command.
 
 ## Building a dongle
 
@@ -61,7 +92,17 @@ This repository only contains a module and no build guides or suggestions.
 
 ## Widgets Overview
 
-This module provides several widgets to visualize the current state of your ZMK-based keyboard:
+This module provides several widgets to visualize the current state of your ZMK-based keyboard.
+
+Three are this fork's and are described under [Desk buddy](#desk-buddy) rather than repeated here:
+
+- **Eyes Widget** — animated eyes in place of the layer label, reporting the active layer and
+  reacting to idle and typing speed
+- **Dialogue** — short spoken lines beside the face, part of the eyes widget
+- **Background Widget** — a layer behind everything else; sparkles on power-up and stress lines
+  that build with typing speed
+
+The rest are upstream's, two of them altered here:
 
 - **Output Widget**  
   Indicates the current output state of the keyboard. **Changed in this fork:** only the live
@@ -77,7 +118,9 @@ This module provides several widgets to visualize the current state of your ZMK-
     - **White:** Profile is free (no device paired or connected for this profile)
 
 - **Layer Widget**  
-  Displays the currently active keyboard layer. Useful for quickly identifying which layer is active.
+  Displays the currently active keyboard layer. Useful for quickly identifying which layer is
+  active. Turn it off when running the eyes, which report the layer themselves and would otherwise
+  be drawn over the top of it.
 
 - **Mod Widget**  
   Shows the status of modifier keys (e.g., Shift, Ctrl, Alt, GUI). Indicates which modifiers are currently pressed.
@@ -122,10 +165,18 @@ This module provides several widgets to visualize the current state of your ZMK-
 
 ## Installation
 
-**ZMK version compatability**
-YADS needs ZMK version `0.3.0` to be build.
-Currently the main branch of YADS does not support ZMK `main` branch as this was already upgraded to Zephyr 4.1. However there is already a branch which supports the new ZMK Zephyr 4.1 version and therefore the current main branch.
-To follow the development please refer to: <https://github.com/janpfischer/zmk-dongle-screen/issues/29>
+> **This fork, not upstream.** The manifest below points at `rayreside`, which is what gets you the
+> eyes. For upstream's own module use `janpfischer` and see
+> [their README](https://github.com/janpfischer/zmk-dongle-screen) — the rest of these instructions
+> are theirs and apply either way.
+
+**ZMK version compatibility**
+This fork tracks ZMK `main`, which is on Zephyr 4.1. That is why it branches from upstream's
+`upgrade-4.1` rather than their `main`, which is still LVGL 8 and will not build against it.
+
+Pin every project to a commit rather than a branch. A branch means "whatever is at the tip when
+this builds", which is how a working config broke without being touched: ZMK was on `main` when
+`main` moved to Zephyr 4.1 and renamed every board.
 
 1. This guide assumes that you have already implemented a basic dongle setup as described [here](https://zmk.dev/docs/development/hardware-integration/dongle).
 2. Once this is done, add this repository to your `west.yaml`.  
@@ -136,28 +187,28 @@ To follow the development please refer to: <https://github.com/janpfischer/zmk-d
      remotes:
        - name: zmkfirmware
          url-base: https://github.com/zmkfirmware
-       - name: janpfischer
-         url-base: https://github.com/janpfischer
+       - name: rayreside
+         url-base: https://github.com/rayreside
      projects:
        - name: zmk
          remote: zmkfirmware
-         revision: 0.3.0 # or main if newer than 0.3.0
+         revision: <a commit on main>
          import: app/west.yml
        - name: zmk-dongle-screen
-         remote: janpfischer
-         revision: main
+         remote: rayreside
+         revision: <a commit on eyes-widget>
      self:
        path: config
    ```
 
    Note: If you want to pin the release of `zmk-dongle-screen` or `zmk` in general you can update the `revision` to use a tag or commit SHA.
   
-   Example for using `zmk-dongle-screen` version 0.0.1:
+   Pinning is strongly recommended rather than optional here — see the note above.
 
    ```yaml
    - name: zmk-dongle-screen
-     remote: janpfischer
-     revision: 0.0.1
+     remote: rayreside
+     revision: 2e2ede2446c476d83e92deb7763740e8f7f821e7
    ```
 
 3. The shield must be included in your build configuration for the dongle you set up in step 1.  
@@ -165,7 +216,7 @@ To follow the development please refer to: <https://github.com/janpfischer/zmk-d
 
    ```yaml
    include:
-     - board: seeeduino_xiao_ble
+     - board: xiao_ble//zmk
        shield: [YOUR_CONFIGURED_DONGLE] dongle_screen
        #cmake-args: -DCONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS=8000 #optional if logging is enabled
        #snippet: zmk-usb-logging #only enable for debugging
@@ -177,11 +228,11 @@ To follow the development please refer to: <https://github.com/janpfischer/zmk-d
 
    ```yaml
    include:
-     - board: seeeduino_xiao_ble
+     - board: xiao_ble//zmk
        shield: split_left
        cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
        artifact-name: split-dongle-left
-     - board: seeeduino_xiao_ble
+     - board: xiao_ble//zmk
        shield: split_right
        cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
        artifact-name: split-dongle-right
@@ -191,24 +242,24 @@ To follow the development please refer to: <https://github.com/janpfischer/zmk-d
 
 ### Configuration sample
 
-A sample `build.yaml` based on `seeeduino_xiao_ble` boards for the keyboard and the dongle including a `settings_reset` firmware could look like this:
+A sample `build.yaml` based on `xiao_ble//zmk` boards for the keyboard and the dongle including a `settings_reset` firmware could look like this:
 
 ```yaml
 include:
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble//zmk
     shield: totem_left
     cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
     artifact-name: totem-dongle-left
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble//zmk
     shield: totem_right
     cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
     artifact-name: totem-dongle-right
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble//zmk
     shield: totem_dongle dongle_screen
     cmake-args: -DCONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS=8000
     snippet: zmk-usb-logging
     artifact-name: totem-dongle-screen
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble//zmk
     shield: settings_reset
     artifact-name: totem-settings-reset
 ```
@@ -283,10 +334,10 @@ To achieve this, an appropriate configuration for the specific microcontroller m
 ```yaml
   include:
 ...
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble//zmk
     shield: settings_reset
 
-  - board: nice_nano_v2
+  - board: nice_nano@2.0.0//zmk
     shield: settings_reset
 ...
 ```
@@ -301,65 +352,10 @@ Refer to the [ZMK Local toolchain](https://zmk.dev/docs/development/local-toolch
 A command for building locally _can_ look something like this:
 
 ```
-west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dongle" -b "seeeduino_xiao_ble" -S zmk-usb-logging -- -DZMK_CONFIG=/workspaces/zmk-config/config -DSHIELD="totem_dongle dongle_screen" -DZMK_EXTRA_MODULES=/workspaces/zmk-modules/zmk-dongle-screen/
+west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dongle" -b "xiao_ble//zmk" -S zmk-usb-logging -- -DZMK_CONFIG=/workspaces/zmk-config/config -DSHIELD="totem_dongle dongle_screen" -DZMK_EXTRA_MODULES=/workspaces/zmk-modules/zmk-dongle-screen/
 ```
 
 _Note: a matching entry for `-DSHIELD` must already be present in your `build.yaml` in your configuration, which is given as the `-DZMK_CONFIG` argument._
-
-## Desk buddy
-
-Three layers this fork adds, drawn back to front: a **background** of atmosphere, the **eyes**, and
-**dialogue** over the top. Each is independent — its own widget, its own event subscriptions, its
-own config option — so any of them can be left off.
-
-```
-CONFIG_DONGLE_SCREEN_EYES_ACTIVE=y
-CONFIG_DONGLE_SCREEN_LAYER_ACTIVE=n     # or the layer label draws underneath the eyes
-CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE=y
-```
-
-### Eyes
-
-Two white shapes on black — no sclera, so an eye is just its pupil. Every expression is a rounded
-bar or an `lv_line` polyline, some filled by a scanline pass over a canvas, so the whole vocabulary
-needs no image assets.
-
-Off the base layer the expression reports the active layer. On the base layer the eyes follow
-activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
-20s; a strained squeeze past 57wpm; and dizzy spirals past 87. Every threshold releases well below
-where it triggers, since ZMK's WPM estimate bounces.
-
-The resting face is not static. It blinks, glances around, and every 40–90s stands in a **quirk** —
-a hollow variation on neutral: larger and looking up, sliced flat and looking down, a small circle,
-a squint, or a sparkle cut clean through. Quirks are skipped while asleep or typing hard, since
-neither would show one.
-
-### Dialogue
-
-Short lines beside the face, typed out a character at a time, held, then fading as they drift
-upward. Lines are grouped by the event that prompts them — waking, typing, waiting — and one is
-picked at random, so adding a variation is a line in a list.
-
-A remark is written in the bottom slot and pushed up if a second line follows, terminal fashion.
-Each line carries its own black plate sized to its own text, so it reads as a highlight and stays
-legible wherever it crosses the eyes.
-
-### Background
-
-Behind everything, and deliberately dimmer than the rest — a background that competes for attention
-is not a background. A burst of gold sparkles on power-up, and purple stress lines under a blue
-wash that swell as typing speed climbs. Their thresholds are matched to the eyes' own, so the face
-and the background agree about what fast means.
-
-### Tuning
-
-`#define`s at the top of each widget source. The expression-to-layer mapping is a single table, and
-the dialogue lines are three lists.
-
-Two constraints worth knowing before writing dialogue: a line has about 210px, a little over twenty
-lowercase characters, before it is clipped; and the font has **no uppercase** and only `!`, `.` and
-`?` of punctuation. Anything outside that set renders as nothing at all, silently. See
-[Licensing](#licensing) for the regeneration command.
 
 ## Licensing
 
