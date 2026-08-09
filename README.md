@@ -220,7 +220,7 @@ this builds", which is how a working config broke without being touched: ZMK was
          import: app/west.yml
        - name: zmk-dongle-screen
          remote: rayreside
-         revision: <a commit on eyes-widget>
+         revision: <a commit on main>
      self:
        path: config
    ```
