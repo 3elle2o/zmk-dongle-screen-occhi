@@ -1,1 +1,4 @@
 .DS_Store
+
+# Generated expression previews - vetting aid, not part of the module.
+docs/_preview/

@@ -31,15 +31,23 @@ In short you can use YADS already with Zephyr 4.1 if you are building with the Y
 
 ## Demo
 
+![The desk buddy at rest, on an Urchin with nice!view halves](/docs/images/dongle.jpg)
+
+The resting face: neutral eyes, both halves' batteries on the bottom row, and the live connection
+at the right — green for a connected BLE profile. The expressions, the dialogue and the background
+are all motion, so a still shows only the quietest thing the screen does.
+
+### Upstream's screen
+
 > These are **upstream's** screen and videos, showing the stock layout — a layer label, WPM and
-> modifier readouts. This fork replaces most of that with the [desk buddy](#desk-buddy), so the
-> pictures below are not what it looks like.
+> modifier readouts. This fork replaces most of that with the [desk buddy](#desk-buddy), so they
+> are not what it looks like here.
 
 ![Sample Screen of zmk-dongle-screen](/docs/images/screen.jpg)
 
 <https://github.com/user-attachments/assets/86c33af6-d83e-4e2a-9766-fc8836e896f1>
 
-### Brightness changes with ambient light sensor and screen toggle
+#### Brightness changes with ambient light sensor and screen toggle
 
 <https://github.com/user-attachments/assets/3379f79c-af90-4763-8ba5-8a8f34fd66cf>
 
