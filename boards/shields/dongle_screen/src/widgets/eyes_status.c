@@ -98,8 +98,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 // ZMK's WPM is a rolling estimate and bounces, so each threshold releases
 // well below where it triggers.
-#define WPM_SQUEEZE_ON 50
-#define WPM_SQUEEZE_OFF 43
+#define WPM_SQUEEZE_ON 57
+#define WPM_SQUEEZE_OFF 50
 #define WPM_CONFUSED_ON 87
 #define WPM_CONFUSED_OFF 79
 

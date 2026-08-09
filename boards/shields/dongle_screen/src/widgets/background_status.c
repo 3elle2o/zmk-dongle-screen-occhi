@@ -78,7 +78,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // eyes' own thresholds so the face and the background agree about what fast
 // means: the strokes begin as the eyes start to strain and are at full pressure
 // by the time the eyes give up entirely.
-#define BG_STRESS_WPM_ON 50
+#define BG_STRESS_WPM_ON 57
 #define BG_STRESS_WPM_FULL 87
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
