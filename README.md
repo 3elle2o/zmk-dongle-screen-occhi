@@ -31,6 +31,10 @@ In short you can use YADS already with Zephyr 4.1 if you are building with the Y
 
 ## Demo
 
+> These are **upstream's** screen and videos, showing the stock layout — a layer label, WPM and
+> modifier readouts. This fork replaces most of that with the [desk buddy](#desk-buddy), so the
+> pictures below are not what it looks like.
+
 ![Sample Screen of zmk-dongle-screen](/docs/images/screen.jpg)
 
 <https://github.com/user-attachments/assets/86c33af6-d83e-4e2a-9766-fc8836e896f1>
