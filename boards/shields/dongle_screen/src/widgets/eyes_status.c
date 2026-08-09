@@ -1691,17 +1691,20 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
 }
 
 static void init_zzz(struct zmk_widget_eyes_status *widget) {
-    // Staggered so they read as a sequence rather than a pulse, offset from the
-    // same top-right anchor the rest of the dialogue uses. The last one sits on
-    // the anchor itself and the others trail down and to the left, so the group
-    // keeps its diagonal while staying inside the band above the eyes.
-    // Offsets up and to the right of the bottom slot, the same place a
-    // one-line remark is typed. The first z sits on that baseline and the
-    // others climb away from it.
+    // Offsets up and to the right of the bottom slot, the same place a one-line
+    // remark is typed. The first z sits on that baseline and the others climb
+    // away from it, staggered so they read as a sequence rather than a pulse.
     static const int16_t zx[3] = {-26, -13, 0};
     static const int16_t zy[3] = {0, 4, 8};
 
     for (int i = 0; i < 3; i++) {
+        // Held rather than read back off the object afterwards. lv_obj_get_y
+        // reports the resolved coordinate, and alignment is not resolved until
+        // the next layout pass - so reading it here returned zero, and the rise
+        // animation then drove y from zero, overriding the alignment and
+        // pinning the z's to the top of the widget.
+        const int16_t base = (int16_t)(DIALOGUE_BOTTOM - dialogue_line_h - zy[i]);
+
         widget->zzz[i] = lv_label_create(widget->obj);
         lv_label_set_text(widget->zzz[i], "z");
         lv_obj_set_style_text_font(widget->zzz[i], &Fredoka_SemiBold_20, LV_PART_MAIN);
@@ -1710,12 +1713,10 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_obj_set_style_bg_opa(widget->zzz[i], LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_pad_hor(widget->zzz[i], DIALOGUE_PAD_H, LV_PART_MAIN);
         lv_obj_set_style_pad_ver(widget->zzz[i], DIALOGUE_PAD_V, LV_PART_MAIN);
-        lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i],
-                     DIALOGUE_BOTTOM - dialogue_line_h - zy[i]);
+        lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i], base);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
 
-        int16_t base = lv_obj_get_y(widget->zzz[i]);
-        uint32_t delay = i * (ZZZ_CYCLE_MS / 3);
+        const uint32_t delay = i * (ZZZ_CYCLE_MS / 3);
 
         lv_anim_t o;
         lv_anim_init(&o);
