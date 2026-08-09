@@ -24,6 +24,11 @@
 // turning the top of the screen solid.
 #define BG_STRESS_LINES 16
 
+// The popping-vein cross that hangs in the air around an angry character.
+// Twelve points - four tapered arms - plus a repeat of the first to close it.
+#define BG_ANGER_MARKS 6
+#define BG_ANGER_PTS 13
+
 struct zmk_widget_background {
     sys_snode_t node;
     lv_obj_t *obj;
@@ -35,6 +40,9 @@ struct zmk_widget_background {
     // rather than floating on black.
     lv_obj_t *stress_grad;
     lv_obj_t *stress[BG_STRESS_LINES];
+
+    lv_obj_t *anger[BG_ANGER_MARKS];
+    lv_point_precise_t anger_pts[BG_ANGER_MARKS][BG_ANGER_PTS];
     lv_point_precise_t stress_pts[BG_STRESS_LINES][2];
     // Per-line share of the full opacity, so they do not all come up together
     // like a comb.
@@ -47,3 +55,9 @@ lv_obj_t *zmk_widget_background_obj(struct zmk_widget_background *widget);
 // Scatters the sparkles, fades them in and out once on a stagger, and puts them
 // away. Safe to call again while one is running - it simply restarts.
 void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget);
+
+// Anger marks on or off, called by whatever is drawing the face. Deliberately
+// not derived from the layer here: the eyes own the mapping from layer to
+// expression, and a second copy of it in this file would be a copy to keep in
+// step. Takes no widget, so a caller needs no handle on this one.
+void zmk_widget_background_set_anger(bool on);

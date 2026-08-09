@@ -48,6 +48,23 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // of the panel.
 #define BG_MARGIN 10
 
+// --- Anger marks ---
+//
+// Bright, and the one thing on this layer that is meant to be: the rest is
+// atmosphere, this is the face shouting. Still short of the pure white in
+// front of it.
+#define BG_ANGER_COLOR 0xFF2A2A
+#define BG_ANGER_MAX_OPA 210
+#define BG_ANGER_R_MIN 7
+#define BG_ANGER_R_MAX 16
+// Arm half-width where it meets the centre, and again at the tip, both as a
+// share of the reach. Tapering is what stops it reading as a plain plus sign.
+#define BG_ANGER_ARM_PCT 42
+#define BG_ANGER_TIP_PCT 62
+// Unlike the sparkles this pulses for as long as the mood lasts rather than
+// running once, so it needs a period rather than a one-off duration.
+#define BG_ANGER_CYCLE_MS 1500
+
 // --- Stress lines ---
 //
 // Purple, and darker than the gold: these are pressure rather than sparkle, and
@@ -105,6 +122,23 @@ static void build_sparkle(lv_point_precise_t *p, int32_t r) {
 
     // Closed, so the outline has no gap where it started.
     p[8] = p[0];
+}
+
+// A cross with four tapered arms, traced from the top of the upper one and
+// round clockwise. Narrower at each tip than where the arms meet, which is the
+// difference between this and a plus sign.
+static void build_anger(lv_point_precise_t *p, int32_t r) {
+    const int32_t a = r * BG_ANGER_ARM_PCT / 100;
+    const int32_t t = a * BG_ANGER_TIP_PCT / 100;
+
+    const int32_t x[12] = {-t, t, a, r, r, a, t, -t, -a, -r, -r, -a};
+    const int32_t y[12] = {-r, -r, -a, -t, t, a, r, r, a, t, -t, -a};
+
+    for (int i = 0; i < 12; i++) {
+        p[i].x = r + x[i];
+        p[i].y = r + y[i];
+    }
+    p[12] = p[0];
 }
 
 static void sparkle_opa_cb(void *var, int32_t v) {
@@ -274,6 +308,61 @@ static struct bg_state bg_get_state(const zmk_event_t *eh) {
 ZMK_DISPLAY_WIDGET_LISTENER(widget_background, struct bg_state, bg_update_cb, bg_get_state)
 ZMK_SUBSCRIPTION(widget_background, zmk_wpm_state_changed);
 
+void zmk_widget_background_set_anger(bool on) {
+    static bool showing;
+
+    // Idempotent: the eyes call this on every expression change, and rescatter
+    // on each one would have the marks jumping about while the mood holds.
+    if (on == showing) {
+        return;
+    }
+    showing = on;
+
+    const int32_t w = lv_display_get_horizontal_resolution(NULL);
+    const int32_t h = lv_display_get_vertical_resolution(NULL);
+
+    struct zmk_widget_background *widget;
+    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
+        for (int i = 0; i < BG_ANGER_MARKS; i++) {
+            lv_obj_t *o = widget->anger[i];
+
+            lv_anim_delete(o, sparkle_opa_cb);
+
+            if (!on) {
+                lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+
+            const int32_t r = (int32_t)rnd_between(BG_ANGER_R_MIN, BG_ANGER_R_MAX);
+
+            build_anger(widget->anger_pts[i], r);
+            lv_line_set_points(o, widget->anger_pts[i], BG_ANGER_PTS);
+            lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
+            lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
+            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
+                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
+
+            lv_obj_set_style_opa(o, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+
+            // Pulses for as long as the mood lasts, rather than the sparkles'
+            // single pass. Each on its own offset into the cycle, so they beat
+            // against each other instead of together.
+            lv_anim_t a;
+            lv_anim_init(&a);
+            lv_anim_set_var(&a, o);
+            lv_anim_set_exec_cb(&a, sparkle_opa_cb);
+            lv_anim_set_values(&a, LV_OPA_TRANSP, BG_ANGER_MAX_OPA);
+            lv_anim_set_delay(&a, rnd_between(0, BG_ANGER_CYCLE_MS));
+            lv_anim_set_time(&a, BG_ANGER_CYCLE_MS / 2);
+            lv_anim_set_playback_time(&a, BG_ANGER_CYCLE_MS / 2);
+            lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+            lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+            lv_anim_start(&a);
+        }
+    }
+}
+
 int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
     lv_obj_remove_style_all(widget->obj);
@@ -321,6 +410,20 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
     }
 
     scatter_stress(widget);
+
+    // Last, so the marks sit over the rest of this layer. They are still
+    // behind the eyes, which is the point - the face shouts, this is the air
+    // around it.
+    for (int i = 0; i < BG_ANGER_MARKS; i++) {
+        lv_obj_t *o = lv_line_create(widget->obj);
+        widget->anger[i] = o;
+
+        lv_obj_remove_style_all(o);
+        lv_obj_set_style_line_color(o, lv_color_hex(BG_ANGER_COLOR), LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(o, true, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
+        lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
 
     sys_slist_append(&widgets, &widget->node);
 

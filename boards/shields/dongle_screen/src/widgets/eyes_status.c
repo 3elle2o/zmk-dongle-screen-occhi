@@ -33,6 +33,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "eyes_status.h"
 #include <fonts.h>
 
+#if IS_ENABLED(CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE)
+#include "background_status.h"
+#endif
+
 #define EYES_W 220
 // Tall enough to carry a band of dialogue above the eyes as well as the eyes
 // themselves. Children are clipped to their parent's box, so this height is
@@ -1413,6 +1417,13 @@ static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id i
     }
 
     widget->pending_expr = id;
+
+#if IS_ENABLED(CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE)
+    // On the incoming expression rather than once the morph lands, so the marks
+    // arrive with the keypress instead of a blink later. The background does
+    // not know what a layer is; the face tells it what it is doing.
+    zmk_widget_background_set_anger(id == EXPR_ANGRY);
+#endif
 
     if (id != EXPR_SLEEPY) {
         show_zzz(widget, false);
