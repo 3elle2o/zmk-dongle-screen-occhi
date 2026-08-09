@@ -133,9 +133,16 @@ static void build_anger(lv_point_precise_t *p, int32_t r) {
     const int32_t x[12] = {-t, t, a, r, r, a, t, -t, -a, -r, -r, -a};
     const int32_t y[12] = {-r, -r, -a, -t, t, a, r, r, a, t, -t, -a};
 
+    // Turned 45 degrees, so the arms lie on the diagonals: the mark is a cross,
+    // not a plus. Rotating the points rather than the object keeps it a plain
+    // polyline - a transform would push LVGL into rendering the thing on its
+    // own layer for no gain.
+    //
+    // 181/256 is sin(45), and the rotation is symmetric in it, so the tips stay
+    // exactly r from the centre and the shape still fits its old box.
     for (int i = 0; i < 12; i++) {
-        p[i].x = r + x[i];
-        p[i].y = r + y[i];
+        p[i].x = r + ((x[i] - y[i]) * 181) / 256;
+        p[i].y = r + ((x[i] + y[i]) * 181) / 256;
     }
     p[12] = p[0];
 }
