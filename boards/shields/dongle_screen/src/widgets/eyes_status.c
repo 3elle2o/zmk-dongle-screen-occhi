@@ -1695,7 +1695,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
     // remark is typed. The first z sits on that baseline and the others climb
     // away from it, staggered so they read as a sequence rather than a pulse.
     static const int16_t zx[3] = {-26, -13, 0};
-    static const int16_t zy[3] = {0, 4, 8};
+    static const int16_t zy[3] = {0, 7, 14};
 
     for (int i = 0; i < 3; i++) {
         // Held rather than read back off the object afterwards. lv_obj_get_y
