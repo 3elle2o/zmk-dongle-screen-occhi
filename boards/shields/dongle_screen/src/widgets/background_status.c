@@ -64,6 +64,15 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define BG_GRAD_COLOR 0x263A96
 #define BG_GRAD_H 96
 #define BG_GRAD_MAX_OPA 130
+// The wash reaches down further as the pressure builds, so it grows rather than
+// only brightening. Starts shallow rather than at nothing, since a gradient a
+// couple of pixels tall is a line, not a wash.
+#define BG_GRAD_H_MIN 22
+
+// Everything on this layer eases toward a new level rather than stepping to it.
+// ZMK reports typing speed about once a second, so without this the effect
+// arrives in visible jumps - and the layer is meant to swell, not tick.
+#define BG_RAMP_MS 700
 
 // Where the effect starts and where it reaches full strength. Matched to the
 // eyes' own thresholds so the face and the background agree about what fast
@@ -191,44 +200,68 @@ struct bg_state {
     uint8_t wpm;
 };
 
+// What is on screen right now, as opposed to what the typing speed is asking
+// for. Held separately so a change part-way through a ramp carries on from
+// where it had reached rather than snapping back to start again.
+static uint8_t bg_level;
+
+// Draws the layer at a given level, 0 to 100. The animation exec callback, so
+// every intermediate value passes through here and the wash and the strokes
+// stay in step by construction.
+static void bg_apply(void *var, int32_t v) {
+    struct zmk_widget_background *widget = var;
+    bg_level = (uint8_t)v;
+
+    if (v <= 0) {
+        lv_obj_add_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < BG_STRESS_LINES; i++) {
+            lv_obj_add_flag(widget->stress[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+
+    lv_obj_set_height(widget->stress_grad,
+                      BG_GRAD_H_MIN + ((BG_GRAD_H - BG_GRAD_H_MIN) * v) / 100);
+    lv_obj_set_style_opa(widget->stress_grad, (lv_opa_t)((BG_GRAD_MAX_OPA * v) / 100),
+                         LV_PART_MAIN);
+    lv_obj_remove_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
+
+    for (int i = 0; i < BG_STRESS_LINES; i++) {
+        const uint32_t opa = ((uint32_t)BG_STRESS_MAX_OPA * v * widget->stress_weight[i]) / 10000;
+        lv_obj_set_style_opa(widget->stress[i], (lv_opa_t)opa, LV_PART_MAIN);
+        lv_obj_remove_flag(widget->stress[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void bg_update_cb(struct bg_state state) {
-    static uint8_t last;
+    static uint8_t target;
     const uint8_t now = stress_intensity(state.wpm);
 
-    if (now == last) {
+    if (now == target) {
         return;
     }
 
     struct zmk_widget_background *widget;
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
-        if (last == 0 && now > 0) {
+        // Only on the way up from nothing, so the pattern holds still for the
+        // duration of an episode instead of reshuffling as the level moves.
+        if (target == 0 && now > 0) {
             scatter_stress(widget);
         }
 
-        if (now == 0) {
-            lv_obj_add_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_set_style_opa(widget->stress_grad, (lv_opa_t)(BG_GRAD_MAX_OPA * now / 100),
-                                 LV_PART_MAIN);
-            lv_obj_remove_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_anim_delete(widget, bg_apply);
 
-        for (int i = 0; i < BG_STRESS_LINES; i++) {
-            lv_obj_t *o = widget->stress[i];
-
-            if (now == 0) {
-                lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
-                continue;
-            }
-
-            const uint32_t opa =
-                ((uint32_t)BG_STRESS_MAX_OPA * now * widget->stress_weight[i]) / 10000;
-            lv_obj_set_style_opa(o, (lv_opa_t)opa, LV_PART_MAIN);
-            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_anim_t a;
+        lv_anim_init(&a);
+        lv_anim_set_var(&a, widget);
+        lv_anim_set_exec_cb(&a, bg_apply);
+        lv_anim_set_values(&a, bg_level, now);
+        lv_anim_set_time(&a, BG_RAMP_MS);
+        lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+        lv_anim_start(&a);
     }
 
-    last = now;
+    target = now;
 }
 
 static struct bg_state bg_get_state(const zmk_event_t *eh) {
