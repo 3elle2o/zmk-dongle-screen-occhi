@@ -126,12 +126,16 @@ static int32_t cos_of(int32_t deg) { return sin_of(deg + 90); }
 // diagonal point that fraction of the waist radius along each axis. All
 // coordinates are shifted by r so the shape sits inside a box of 2r, which is
 // what lv_line expects - its points are relative to the object, not the centre.
-static void build_sparkle(lv_point_precise_t *p, int32_t r) {
-    const int32_t w = r * BG_WAIST_PCT / 100;
+static void build_sparkle(lv_point_precise_t *p, int32_t r, int32_t inset) {
+    // Traced inside the box by half the stroke, because a rounded cap reaches
+    // that far past the point it ends on and LVGL clips an object's drawing to
+    // its own area. Without this the tips come back shaved.
+    const int32_t reach = r - inset;
+    const int32_t w = reach * BG_WAIST_PCT / 100;
     const int32_t d = w * 181 / 256;
 
-    const int32_t x[8] = {0, d, r, d, 0, -d, -r, -d};
-    const int32_t y[8] = {-r, -d, 0, d, r, d, 0, -d};
+    const int32_t x[8] = {0, d, reach, d, 0, -d, -reach, -d};
+    const int32_t y[8] = {-reach, -d, 0, d, reach, d, 0, -d};
 
     for (int i = 0; i < 8; i++) {
         p[i].x = r + x[i];
@@ -148,8 +152,12 @@ static void build_sparkle(lv_point_precise_t *p, int32_t r) {
 // so it leaves each end quickly and flattens through the bow. Working in polar
 // keeps this to one expression; the same shape as a Bezier would need control
 // points nobody could read.
-static void build_anger_arc(lv_point_precise_t *p, int32_t r, int k) {
-    const int32_t r_in = r * BG_ANGER_INNER_PCT / 100;
+static void build_anger_arc(lv_point_precise_t *p, int32_t r, int k, int32_t inset) {
+    // As with the sparkle: the stroke's rounded cap reaches half its width past
+    // the outermost point, so the reach comes in by that much or the tips are
+    // clipped against the object's own edge.
+    const int32_t reach = r - inset;
+    const int32_t r_in = reach * BG_ANGER_INNER_PCT / 100;
     const int32_t half = (90 * BG_ANGER_SPAN_PCT / 100) / 2;
     const int32_t last = BG_ANGER_ARC_PTS - 1;
 
@@ -158,7 +166,7 @@ static void build_anger_arc(lv_point_precise_t *p, int32_t r, int k) {
 
         // (2i/last - 1) squared, kept in integers by scaling both terms.
         const int32_t t = 2 * i - last;
-        const int32_t rad = r_in + ((r - r_in) * t * t) / (last * last);
+        const int32_t rad = r_in + ((reach - r_in) * t * t) / (last * last);
 
         p[i].x = r + (rad * cos_of(deg)) / TRIG_MAX;
         p[i].y = r + (rad * sin_of(deg)) / TRIG_MAX;
@@ -388,7 +396,7 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             const int32_t r = (int32_t)rnd_between(BG_R_MIN, BG_R_MAX);
             lv_obj_t *o = widget->sparkle[i];
 
-            build_sparkle(widget->pts[i], r);
+            build_sparkle(widget->pts[i], r, (BG_LINE_W(r) + 1) / 2);
             lv_line_set_points(o, widget->pts[i], BG_SPARKLE_PTS);
             lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
             lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
@@ -408,7 +416,7 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             for (int j = 0; j < BG_ANGER_ARCS; j++) {
                 lv_obj_t *o = widget->anger[i][j];
 
-                build_anger_arc(widget->anger_pts[i][j], r, j);
+                build_anger_arc(widget->anger_pts[i][j], r, j, (BG_ANGER_LINE_W(r) + 1) / 2);
                 lv_line_set_points(o, widget->anger_pts[i][j], BG_ANGER_ARC_PTS);
                 lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
                 lv_obj_set_style_line_width(o, BG_ANGER_LINE_W(r), LV_PART_MAIN);
@@ -425,8 +433,11 @@ static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
             // number. Position, character and phase carry the variety instead.
             lv_label_set_text(o,
                               BG_SYMBOL_CHARS[rnd_between(0, ARRAY_SIZE(BG_SYMBOL_CHARS) - 1)]);
-            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - 30),
-                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - 44));
+            // Measured from the font rather than guessed, so a glyph cannot
+            // hang off an edge and be clipped by the screen.
+            const int32_t gh = lv_font_get_line_height(&Fredoka_SemiBold_40);
+            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - gh),
+                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - gh));
             pulse(o, BG_SYMBOL_MAX_OPA, BG_PULSE_MS, rnd_between(0, BG_PULSE_MS));
         }
     }
