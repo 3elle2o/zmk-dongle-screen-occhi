@@ -12,10 +12,13 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/display.h>
 #include <zmk/event_manager.h>
+#include <zmk/events/layer_state_changed.h>
 #include <zmk/events/wpm_state_changed.h>
+#include <zmk/keymap.h>
 #include <zmk/wpm.h>
 
 #include "background_status.h"
+#include <fonts.h>
 
 // Dim gold rather than a bright yellow, and never drawn at full opacity. The
 // eyes and the dialogue are pure white at full strength, so the gap between
@@ -38,11 +41,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // is to work with at these sizes.
 #define BG_LINE_W(r) (1 + (r) / 5)
 
-// The whole burst, within which each sparkle takes its own turn. Long enough to
-// register on boot, short enough not to delay the face.
+// How long an effect stays up for once released. Also the sparkles' pulse
+// period, so a burst at power-up breathes once and goes.
 #define BG_BURST_MS 2600
 #define BG_IN_MS 400
-#define BG_OUT_MS 700
 
 // Keeps sparkles off the very edge, where the case lip eats the last few pixels
 // of the panel.
@@ -61,9 +63,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // share of the reach. Tapering is what stops it reading as a plain plus sign.
 #define BG_ANGER_ARM_PCT 42
 #define BG_ANGER_TIP_PCT 62
-// Unlike the sparkles this pulses for as long as the mood lasts rather than
-// running once, so it needs a period rather than a one-off duration.
-#define BG_ANGER_CYCLE_MS 1500
 
 // --- Stress lines ---
 //
@@ -145,52 +144,68 @@ static void sparkle_opa_cb(void *var, int32_t v) {
     lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, LV_PART_MAIN);
 }
 
-static void sparkle_done(lv_anim_t *a) {
-    lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN);
+// --- Layer effects ---
+//
+// One machine for all three. Each is a scattering of small marks that pulse for
+// as long as the layer is held, and each is taken down the same way: not when
+// the key comes up, but once it has been on screen for the standard burst. A
+// tap and a hold therefore differ only in how long the pulsing runs, and a tap
+// is not a flicker.
+
+enum bg_effect {
+    BG_EFFECT_NONE = 0,
+    BG_EFFECT_SPARKLE,
+    BG_EFFECT_SYMBOLS,
+    BG_EFFECT_ANGER,
+};
+
+// Which layer summons what. Deliberately its own table rather than anything
+// derived from the eyes: that maps layers to expressions, this maps layers to
+// atmosphere, and the symbol layer has an entry here while having no expression
+// at all.
+static const uint8_t layer_effect[] = {
+    [1] = BG_EFFECT_SYMBOLS,
+    [2] = BG_EFFECT_SPARKLE,
+    [3] = BG_EFFECT_ANGER,
+};
+
+// Punctuation only - no letters, or it reads as words rather than as symbols.
+static const char *const BG_SYMBOL_CHARS[] = {"&", "[", "]", "?", "#", "@", "*",
+                                              "+", "/", "<", ">", "=", "{", "}",
+                                              ";", ":", "~", "^", "%", "$"};
+
+#define BG_SYMBOL_COLOR 0x2FA8BE
+#define BG_SYMBOL_MAX_OPA 190
+
+// How long a mark takes to breathe in and out once. The sparkles keep their
+// slower original pace; the other two are brisker, being reactions to a key.
+#define BG_PULSE_MS 1600
+
+// Starts one mark pulsing: invisible, then breathing between nothing and its
+// peak forever, offset so the group never beats in unison.
+static void pulse(lv_obj_t *o, lv_opa_t peak, uint32_t cycle_ms) {
+    lv_anim_delete(o, sparkle_opa_cb);
+    lv_obj_set_style_opa(o, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, o);
+    lv_anim_set_exec_cb(&a, sparkle_opa_cb);
+    lv_anim_set_values(&a, LV_OPA_TRANSP, peak);
+    lv_anim_set_delay(&a, rnd_between(0, cycle_ms));
+    lv_anim_set_time(&a, cycle_ms / 2);
+    lv_anim_set_playback_time(&a, cycle_ms / 2);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
 }
 
-void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget) {
-    const int32_t w = lv_display_get_horizontal_resolution(NULL);
-    const int32_t h = lv_display_get_vertical_resolution(NULL);
-
-    for (int i = 0; i < BG_SPARKLES; i++) {
-        lv_obj_t *o = widget->sparkle[i];
-        const int32_t r = (int32_t)rnd_between(BG_R_MIN, BG_R_MAX);
-
-        lv_anim_delete(o, sparkle_opa_cb);
-
-        build_sparkle(widget->pts[i], r);
-        lv_line_set_points(o, widget->pts[i], BG_SPARKLE_PTS);
-        lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
-        lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
-
-        // Placed by its top-left, so the centre is offset back by the radius.
-        lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
-                       (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
-
-        lv_obj_set_style_opa(o, LV_OPA_TRANSP, LV_PART_MAIN);
-        lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-
-        // Up and back down in one animation, via the playback. Each waits its
-        // own turn, so they arrive scattered in time as well as in space, and
-        // the delay is bounded so every sparkle is finished inside the burst.
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, o);
-        lv_anim_set_exec_cb(&a, sparkle_opa_cb);
-        lv_anim_set_values(&a, LV_OPA_TRANSP, BG_PEAK_OPA);
-        lv_anim_set_delay(&a, rnd_between(0, BG_BURST_MS - BG_IN_MS - BG_OUT_MS));
-        lv_anim_set_time(&a, BG_IN_MS);
-        lv_anim_set_playback_time(&a, BG_OUT_MS);
-        lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-        lv_anim_set_completed_cb(&a, sparkle_done);
-        lv_anim_start(&a);
-    }
+static void quiet(lv_obj_t *o) {
+    lv_anim_delete(o, sparkle_opa_cb);
+    lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Scatters the strokes afresh: new positions, lengths and weights. Called each
-// time the effect comes up from nothing, so a burst of fast typing does not
-// draw the identical pattern it drew last time.
 static void scatter_stress(struct zmk_widget_background *widget) {
     const int32_t w = lv_display_get_horizontal_resolution(NULL);
 
@@ -308,32 +323,38 @@ static struct bg_state bg_get_state(const zmk_event_t *eh) {
 ZMK_DISPLAY_WIDGET_LISTENER(widget_background, struct bg_state, bg_update_cb, bg_get_state)
 ZMK_SUBSCRIPTION(widget_background, zmk_wpm_state_changed);
 
-void zmk_widget_background_set_anger(bool on) {
-    static bool showing;
-
-    // Idempotent: the eyes call this on every expression change, and rescatter
-    // on each one would have the marks jumping about while the mood holds.
-    if (on == showing) {
-        return;
-    }
-    showing = on;
-
+// Scatters and starts whichever set of marks the effect uses.
+static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
     const int32_t w = lv_display_get_horizontal_resolution(NULL);
     const int32_t h = lv_display_get_vertical_resolution(NULL);
 
-    struct zmk_widget_background *widget;
-    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
+    for (int i = 0; i < BG_SPARKLES; i++) {
+        quiet(widget->sparkle[i]);
+    }
+    for (int i = 0; i < BG_ANGER_MARKS; i++) {
+        quiet(widget->anger[i]);
+    }
+    for (int i = 0; i < BG_SYMBOLS; i++) {
+        quiet(widget->symbol[i]);
+    }
+
+    if (effect == BG_EFFECT_SPARKLE) {
+        for (int i = 0; i < BG_SPARKLES; i++) {
+            const int32_t r = (int32_t)rnd_between(BG_R_MIN, BG_R_MAX);
+            lv_obj_t *o = widget->sparkle[i];
+
+            build_sparkle(widget->pts[i], r);
+            lv_line_set_points(o, widget->pts[i], BG_SPARKLE_PTS);
+            lv_obj_set_size(o, 2 * r + 1, 2 * r + 1);
+            lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
+            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
+                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
+            pulse(o, BG_PEAK_OPA, BG_BURST_MS - BG_IN_MS);
+        }
+    } else if (effect == BG_EFFECT_ANGER) {
         for (int i = 0; i < BG_ANGER_MARKS; i++) {
-            lv_obj_t *o = widget->anger[i];
-
-            lv_anim_delete(o, sparkle_opa_cb);
-
-            if (!on) {
-                lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
-                continue;
-            }
-
             const int32_t r = (int32_t)rnd_between(BG_ANGER_R_MIN, BG_ANGER_R_MAX);
+            lv_obj_t *o = widget->anger[i];
 
             build_anger(widget->anger_pts[i], r);
             lv_line_set_points(o, widget->anger_pts[i], BG_ANGER_PTS);
@@ -341,27 +362,93 @@ void zmk_widget_background_set_anger(bool on) {
             lv_obj_set_style_line_width(o, BG_LINE_W(r), LV_PART_MAIN);
             lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN) - r,
                            (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN) - r);
+            pulse(o, BG_ANGER_MAX_OPA, BG_PULSE_MS);
+        }
+    } else if (effect == BG_EFFECT_SYMBOLS) {
+        for (int i = 0; i < BG_SYMBOLS; i++) {
+            lv_obj_t *o = widget->symbol[i];
 
-            lv_obj_set_style_opa(o, LV_OPA_TRANSP, LV_PART_MAIN);
-            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-
-            // Pulses for as long as the mood lasts, rather than the sparkles'
-            // single pass. Each on its own offset into the cycle, so they beat
-            // against each other instead of together.
-            lv_anim_t a;
-            lv_anim_init(&a);
-            lv_anim_set_var(&a, o);
-            lv_anim_set_exec_cb(&a, sparkle_opa_cb);
-            lv_anim_set_values(&a, LV_OPA_TRANSP, BG_ANGER_MAX_OPA);
-            lv_anim_set_delay(&a, rnd_between(0, BG_ANGER_CYCLE_MS));
-            lv_anim_set_time(&a, BG_ANGER_CYCLE_MS / 2);
-            lv_anim_set_playback_time(&a, BG_ANGER_CYCLE_MS / 2);
-            lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-            lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-            lv_anim_start(&a);
+            // One size only: these are label glyphs rather than traced shapes,
+            // so varying them would mean another font rather than another
+            // number. Position, character and phase carry the variety instead.
+            lv_label_set_text(o,
+                              BG_SYMBOL_CHARS[rnd_between(0, ARRAY_SIZE(BG_SYMBOL_CHARS) - 1)]);
+            lv_obj_set_pos(o, (int32_t)rnd_between(BG_MARGIN, w - BG_MARGIN - 12),
+                           (int32_t)rnd_between(BG_MARGIN, h - BG_MARGIN - 20));
+            pulse(o, BG_SYMBOL_MAX_OPA, BG_PULSE_MS);
         }
     }
 }
+
+static void hide_effect(struct zmk_widget_background *widget) {
+    show_effect(widget, BG_EFFECT_NONE);
+}
+
+// What is on screen, which is not the same as what the layer is asking for -
+// an effect outlives its layer by design.
+static uint8_t effect_shown;
+static uint32_t effect_started;
+static lv_timer_t *effect_timer;
+
+static void effect_timer_cb(lv_timer_t *timer) {
+    lv_timer_pause(timer);
+
+    struct zmk_widget_background *widget;
+    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) { hide_effect(widget); }
+    effect_shown = BG_EFFECT_NONE;
+}
+
+static void bg_set_effect(uint8_t effect) {
+    if (effect != BG_EFFECT_NONE) {
+        // Any pending takedown is cancelled, including one for this same
+        // effect - going back to a layer inside its own tail simply continues.
+        if (effect_timer) {
+            lv_timer_pause(effect_timer);
+        }
+        if (effect == effect_shown) {
+            return;
+        }
+
+        struct zmk_widget_background *widget;
+        SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) { show_effect(widget, effect); }
+        effect_shown = effect;
+        effect_started = lv_tick_get();
+        return;
+    }
+
+    if (effect_shown == BG_EFFECT_NONE || !effect_timer) {
+        return;
+    }
+
+    // The layer is gone but the effect is not, yet. It runs until it has had
+    // the full burst, so a tap reads the same as any other burst rather than
+    // as a flicker; a hold has already outlived it and goes now.
+    const uint32_t elapsed = lv_tick_elaps(effect_started);
+    lv_timer_set_period(effect_timer, elapsed >= BG_BURST_MS ? 1 : BG_BURST_MS - elapsed);
+    lv_timer_reset(effect_timer);
+    lv_timer_resume(effect_timer);
+}
+
+void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget) {
+    ARG_UNUSED(widget);
+
+    // Power-up is just a tap that nobody made: raise it and release it at once,
+    // and the takedown rule gives it exactly one burst.
+    bg_set_effect(BG_EFFECT_SPARKLE);
+    bg_set_effect(BG_EFFECT_NONE);
+}
+
+static int bg_layer_listener(const zmk_event_t *eh) {
+    ARG_UNUSED(eh);
+
+    const uint8_t layer = zmk_keymap_highest_layer_active();
+    bg_set_effect(layer < ARRAY_SIZE(layer_effect) ? layer_effect[layer] : BG_EFFECT_NONE);
+
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(widget_background_layer, bg_layer_listener);
+ZMK_SUBSCRIPTION(widget_background_layer, zmk_layer_state_changed);
 
 int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
@@ -424,6 +511,22 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
         lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     }
+
+    for (int i = 0; i < BG_SYMBOLS; i++) {
+        lv_obj_t *o = lv_label_create(widget->obj);
+        widget->symbol[i] = o;
+
+        lv_obj_set_style_text_font(o, &Fredoka_SemiBold_20, LV_PART_MAIN);
+        lv_obj_set_style_text_color(o, lv_color_hex(BG_SYMBOL_COLOR), LV_PART_MAIN);
+        lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Infinite and paused; it is given a period each time an effect is released
+    // and pauses itself once it has fired. A repeat count of one would have
+    // LVGL delete it the first time it ran.
+    effect_timer = lv_timer_create(effect_timer_cb, BG_BURST_MS, NULL);
+    lv_timer_set_repeat_count(effect_timer, -1);
+    lv_timer_pause(effect_timer);
 
     sys_slist_append(&widgets, &widget->node);
 

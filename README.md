@@ -62,9 +62,9 @@ activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's 
 where it triggers, since ZMK's WPM estimate bounces.
 
 The resting face is not static. It blinks, glances around, and every 40–90s stands in a **quirk** —
-a hollow variation on neutral: larger and looking up, sliced flat and looking down, a small circle,
-a squint, or a sparkle cut clean through. Quirks are skipped while asleep or typing hard, since
-neither would show one.
+a wink, a flat-sliced look downward, a small circle, a squint, a lidded stare, or a startle. Most
+are drawn hollow, which is what makes them read as the same eyes doing something rather than as
+different eyes. Quirks are skipped while asleep or typing hard, since neither would show one.
 
 ### Dialogue
 
@@ -79,9 +79,19 @@ legible wherever it crosses the eyes.
 ### Background
 
 Behind everything, and deliberately dimmer than the rest — a background that competes for attention
-is not a background. A burst of gold sparkles on power-up, and purple stress lines under a blue
-wash that swell as typing speed climbs. Their thresholds are matched to the eyes' own, so the face
-and the background agree about what fast means.
+is not a background.
+
+Purple stress lines under a blue wash swell as typing speed climbs, on thresholds matched to the
+eyes' own so the face and the background agree about what fast means.
+
+Layers summon their own atmosphere: drifting punctuation on the symbol layer, gold sparkles
+alongside the twinkling eyes, and red anger marks with the scowl. A tap gets the same burst a hold
+does — the effect is taken down once it has been up for its full duration, not when the key is
+released, so a brief press is never a flicker. Holding simply keeps it pulsing. The same burst runs
+once at power-up.
+
+The layer-to-effect table is this widget's own. The eyes map layers to expressions; this maps them
+to atmosphere, and the symbol layer has an entry here while having no expression at all.
 
 ### Tuning
 

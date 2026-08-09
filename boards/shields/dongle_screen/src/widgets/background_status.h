@@ -29,6 +29,9 @@
 #define BG_ANGER_MARKS 6
 #define BG_ANGER_PTS 13
 
+// Loose punctuation drifting about behind the symbol layer.
+#define BG_SYMBOLS 8
+
 struct zmk_widget_background {
     sys_snode_t node;
     lv_obj_t *obj;
@@ -43,6 +46,8 @@ struct zmk_widget_background {
 
     lv_obj_t *anger[BG_ANGER_MARKS];
     lv_point_precise_t anger_pts[BG_ANGER_MARKS][BG_ANGER_PTS];
+
+    lv_obj_t *symbol[BG_SYMBOLS];
     lv_point_precise_t stress_pts[BG_STRESS_LINES][2];
     // Per-line share of the full opacity, so they do not all come up together
     // like a comb.
@@ -52,12 +57,6 @@ struct zmk_widget_background {
 int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *parent);
 lv_obj_t *zmk_widget_background_obj(struct zmk_widget_background *widget);
 
-// Scatters the sparkles, fades them in and out once on a stagger, and puts them
-// away. Safe to call again while one is running - it simply restarts.
+// Scatters sparkles and lets them run for the standard burst. Used at power-up;
+// the layer effects go through the same path.
 void zmk_widget_background_sparkle_burst(struct zmk_widget_background *widget);
-
-// Anger marks on or off, called by whatever is drawing the face. Deliberately
-// not derived from the layer here: the eyes own the mapping from layer to
-// expression, and a second copy of it in this file would be a copy to keep in
-// step. Takes no widget, so a caller needs no handle on this one.
-void zmk_widget_background_set_anger(bool on);

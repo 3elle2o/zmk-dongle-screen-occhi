@@ -33,10 +33,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "eyes_status.h"
 #include <fonts.h>
 
-#if IS_ENABLED(CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE)
-#include "background_status.h"
-#endif
-
 #define EYES_W 220
 // Tall enough to carry a band of dialogue above the eyes as well as the eyes
 // themselves. Children are clipped to their parent's box, so this height is
@@ -329,6 +325,10 @@ enum eye_shape {
 // lands it between shock's 24 and neutral's 56.
 #define QUIRK_SMALL_D (EYE_W * QUIRK_SMALL_PCT / 100)
 
+// Height of the shut eye in a wink. Below twice the outline width, so the
+// border meets in the middle and fills it.
+#define WINK_SHUT_H 12
+
 // A sparkle punched clean through the eye: centred, filling nearly its whole
 // height and width, sides bowed inward. Radius follows cos(2t) to the fourth,
 // which puts sharp tips on the axes and pinches between them. The tips are
@@ -393,10 +393,10 @@ enum expr_id {
     EXPR_UNAMUSED,
     EXPR_ANGRY,
     // Transient variations on neutral, chosen at random by the quirk timer.
-    EXPR_NEUTRAL_UP,
+    EXPR_TWINKLE,
+    EXPR_WINK,
     EXPR_NEUTRAL_DOWN,
     EXPR_NEUTRAL_SMALL,
-    EXPR_NEUTRAL_TWINKLE,
     EXPR_NEUTRAL_SQUINT,
     EXPR_COUNT,
 };
@@ -419,6 +419,10 @@ struct expression {
     // fill. LVGL insets a border, so an outlined eye occupies the same box as
     // a solid one and nothing shifts. 0 means solid.
     int16_t outline_w;
+    // Which eye is shut, 1 for the left and 2 for the right; 0 for neither.
+    // Counted from one so that the zero every other expression leaves here
+    // means "no wink" rather than "the left eye".
+    uint8_t wink;
 };
 
 static const struct expression expressions[EXPR_COUNT] = {
@@ -458,8 +462,12 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Width, height and radius scale by the same factor, so these are neutral
     // resized rather than new shapes; the cropped one is neutral's own outline
     // with a flat slice off the top, so its curve is neutral's exactly.
-    [EXPR_NEUTRAL_UP] = {SHAPE_BAR, EYE_W * QUIRK_UP_PCT / 100, EYE_H * QUIRK_UP_PCT / 100, 0, -7,
-                         EYE_R * QUIRK_UP_PCT / 100, false, .outline_w = QUIRK_OUTLINE_W},
+    // The only expression whose two eyes differ in shape rather than merely
+    // being mirrored. The open one is neutral; the shut one is the same bar
+    // squashed until its border fills it, which is what makes it read as
+    // closed rather than as a narrow ring.
+    [EXPR_WINK] = {SHAPE_BAR, EYE_W, EYE_H, 0, 0, EYE_R, false,
+                   .outline_w = QUIRK_OUTLINE_W, .wink = 2},
     // Hollow here means simply not filling the traced outline: the stroke that
     // used to smooth the fill's stepped edge becomes the whole shape, so the
     // sliced top stays exactly where it was.
@@ -475,7 +483,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     // sampled about twice: the plain quirks survive that because a growing
     // rounded rectangle reads fine half-drawn, but a half-formed sparkle just
     // looks like it arrived late.
-    [EXPR_NEUTRAL_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
+    [EXPR_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
     // Neutral narrowed, as though focusing on something far off. Full width and
     // neutral's radius, which LVGL clamps to half the reduced height, so it
     // ends up a flattened pill rather than a squashed rounded rectangle.
@@ -489,7 +497,7 @@ static const enum expr_id layer_expr[] = {
     // Layer 0's entry is never read - the base layer is handled before this
     // table is consulted. sym is EXPR_NONE, so holding it changes nothing:
     // whatever the eyes were showing carries on.
-    [0] = EXPR_NONE,  [1] = EXPR_NONE,  [2] = EXPR_UNAMUSED,
+    [0] = EXPR_NONE,  [1] = EXPR_NONE,  [2] = EXPR_TWINKLE,
     [3] = EXPR_ANGRY, [4] = EXPR_SHOCK,
 };
 
@@ -933,6 +941,13 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     for (int i = 0; i < 2; i++) {
         enum eye_shape shape = e->shape;
         int32_t box_h = e->h;
+
+        // The one place the two eyes are allowed to differ in more than
+        // handedness. Squashing the box is enough: an outlined bar this short
+        // has no room for a hole, so the border closes over and it reads shut.
+        if (e->wink == (uint8_t)(i + 1)) {
+            box_h = WINK_SHUT_H;
+        }
         int16_t out = (int16_t)(EYE_DX + e->spread);
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
@@ -1418,13 +1433,6 @@ static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id i
 
     widget->pending_expr = id;
 
-#if IS_ENABLED(CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE)
-    // On the incoming expression rather than once the morph lands, so the marks
-    // arrive with the keypress instead of a blink later. The background does
-    // not know what a layer is; the face tells it what it is doing.
-    zmk_widget_background_set_anger(id == EXPR_ANGRY);
-#endif
-
     if (id != EXPR_SLEEPY) {
         show_zzz(widget, false);
         if (zzz_timer) {
@@ -1475,12 +1483,17 @@ static void blink_timer_cb(lv_timer_t *timer) {
 // a layer or a burst of typing takes precedence and it simply lapses.
 static enum expr_id quirk = EXPR_NONE;
 
+// Twinkle left this pool when it was promoted to a layer; unamused and shock
+// came in the other way. Shock stays a layer expression as well - nothing stops
+// an expression being both, and a face that is briefly startled on its own
+// reads no differently from one startled by a key.
 static const enum expr_id quirks[] = {
-    EXPR_NEUTRAL_UP,
+    EXPR_WINK,
     EXPR_NEUTRAL_DOWN,
     EXPR_NEUTRAL_SMALL,
-    EXPR_NEUTRAL_TWINKLE,
     EXPR_NEUTRAL_SQUINT,
+    EXPR_UNAMUSED,
+    EXPR_SHOCK,
 };
 
 static void glance_timer_cb(lv_timer_t *timer) {

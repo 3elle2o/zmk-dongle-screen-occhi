@@ -37,6 +37,7 @@ QUIRK_UP_PCT, QUIRK_SMALL_PCT = 116, 62
 QUIRK_OUTLINE_W = 8
 QUIRK_SMALL_D = EYE_W * QUIRK_SMALL_PCT // 100
 SQUINT_TO = 110
+WINK_SHUT_H = 12
 LV_RADIUS_CIRCLE = -1  # stands in for LVGL's sentinel
 
 OPENNESS = OPEN_FULL  # fully open; a blink is this shape at a lower value
@@ -180,13 +181,12 @@ EXPR = {
     "sleepy":         ("arc", EYE_W, 30, 0, 12, 0, 0, 0, False, 0),
     "unamused":       ("lidded", EYE_W + LID_TAIL, EYE_H // 2, 0, 0, 0, 9, 6, True, 0),
     "angry":          ("angry", EYE_W, EYE_H, 0, -14, 0, 9, 0, True, 0),
+    "twinkle":        ("twinkle", EYE_W, EYE_H, 0, 0, 0, 9, 0, True, 0),
     "confused":       ("spiral", 86, 86, 0, 0, 0, 8, 6, False, 0),
-    "neutral_up":     ("bar", EYE_W * QUIRK_UP_PCT // 100, EYE_H * QUIRK_UP_PCT // 100,
-                       0, -7, EYE_R * QUIRK_UP_PCT // 100, 0, 0, False, QUIRK_OUTLINE_W),
+    "wink":           ("bar", EYE_W, EYE_H, 0, 0, EYE_R, 0, 0, False, QUIRK_OUTLINE_W),
     "neutral_down":   ("cropped", EYE_W, EYE_H, 0, 7, 0, QUIRK_OUTLINE_W, 0, False, 0),
     "neutral_small":  ("bar", QUIRK_SMALL_D, QUIRK_SMALL_D, 0, 0, LV_RADIUS_CIRCLE,
                        0, 0, False, QUIRK_OUTLINE_W),
-    "neutral_twinkle": ("twinkle", EYE_W, EYE_H, 0, 0, 0, 9, 0, True, 0),
     "neutral_squint": ("bar", EYE_W, EYE_H * SQUINT_TO // OPEN_FULL, 0, 0, EYE_R,
                        0, 0, False, QUIRK_OUTLINE_W),
 }
@@ -204,7 +204,8 @@ def draw_eye(out, name, eye):
     cx, cy = CX + dx, CY + dy
 
     if shape == "bar":
-        bh = scaled(h, OPENNESS)
+        # The winking eye is the same bar squashed until its border closes over.
+        bh = scaled(WINK_SHUT_H if (name == "wink" and eye == 1) else h, OPENNESS)
         r = min(w, bh) // 2 if radius == LV_RADIUS_CIRCLE else radius
         if outline_w:
             ow = outline_w
