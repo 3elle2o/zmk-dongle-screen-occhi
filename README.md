@@ -102,7 +102,13 @@ Three are this fork's and are described under [Desk buddy](#desk-buddy) rather t
 - **Background Widget** — a layer behind everything else; sparkles on power-up and stress lines
   that build with typing speed
 
-The rest are upstream's, two of them altered here:
+The rest are upstream's, two of them altered here.
+
+> **The layer, mod and WPM widgets have not been adapted to the eyes.** They keep upstream's
+> placements, which were chosen for upstream's layout, and all three land where something now
+> draws: layer dead centre underneath the eyes, mod across their lower edge, WPM in the band
+> dialogue writes across. Turn them off when running the desk buddy, or move them — they are not
+> broken, just placed for a screen that no longer looks like this.
 
 - **Output Widget**  
   Indicates the current output state of the keyboard. **Changed in this fork:** only the live
@@ -119,14 +125,14 @@ The rest are upstream's, two of them altered here:
 
 - **Layer Widget**  
   Displays the currently active keyboard layer. Useful for quickly identifying which layer is
-  active. Turn it off when running the eyes, which report the layer themselves and would otherwise
-  be drawn over the top of it.
+  active. Redundant alongside the eyes, which report the layer themselves.
 
 - **Mod Widget**  
   Shows the status of modifier keys (e.g., Shift, Ctrl, Alt, GUI). Indicates which modifiers are currently pressed.
 
 - **WPM Widget**  
-  Displays the current words per minute (WPM) typing speed in real time.
+  Displays the current words per minute (WPM) typing speed in real time. The eyes read the same
+  figure whether or not this is shown - turning it off drops the readout, not the reaction.
 
 - **Battery Widget**  
   Shows the battery level of the dongle and/or the keyboard, if supported. **Changed in this
