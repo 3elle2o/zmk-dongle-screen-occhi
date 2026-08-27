@@ -8,7 +8,8 @@
 > them, and a background layer behind both. The output and battery widgets were reworked to make
 > room. See [Desk buddy](#desk-buddy).
 >
-> Also note [Licensing](#licensing) — the bundled font is OFL, not MIT, and carries no uppercase.
+> Also note [Licensing](#licensing) — the bundled fonts are OFL, not MIT, and the text face
+> carries no uppercase.
 >
 > Upstream: [janpfischer/zmk-dongle-screen](https://github.com/janpfischer/zmk-dongle-screen) by
 > [janpfischer](https://github.com/janpfischer), who wrote the module this is built on — the
@@ -390,6 +391,8 @@ The module is MIT, **except** the bundled font:
 | Everything else | MIT |
 | `boards/shields/dongle_screen/src/fonts/Fredoka_SemiBold_20.c` | SIL OFL 1.1 |
 | `boards/shields/dongle_screen/src/fonts/Fredoka_SemiBold_40.c` | SIL OFL 1.1 |
+| `boards/shields/dongle_screen/src/fonts/NerdFonts_Regular_20.c` | SIL OFL 1.1 |
+| `boards/shields/dongle_screen/src/fonts/NerdFonts_Regular_40.c` | SIL OFL 1.1 |
 | `boards/shields/dongle_screen/src/fonts/Fredoka-OFL.txt` | the OFL licence text itself |
 
 [Fredoka](https://github.com/hafontia/Fredoka-One) is Copyright 2016 The Fredoka Project Authors,
@@ -397,7 +400,12 @@ licensed under the SIL Open Font License 1.1. The OFL permits bundling with soft
 licence and is not viral — it applies to the font file alone and leaves the rest of this module
 MIT. Fredoka carries no Reserved Font Name, so this converted copy may keep the name.
 
-If you redistribute this module, `Fredoka-OFL.txt` must travel with the font. That is the OFL's
+The two `NerdFonts_*` files come from upstream and are converted from JetBrains Mono Nerd Font,
+whose glyphs are JetBrains Mono — Copyright 2020 The JetBrains Mono Project Authors, also under the
+SIL OFL 1.1. They are used by the mod and WPM widgets. The licence text bundled here is the OFL
+itself and covers them equally; only the copyright line at its head is Fredoka's.
+
+If you redistribute this module, `Fredoka-OFL.txt` must travel with the fonts. That is the OFL's
 one substantive condition.
 
 The font was generated from the upstream variable font by instancing `wght=600 wdth=100` with
