@@ -192,15 +192,27 @@ enum bg_effect {
     BG_EFFECT_ANGER,
 };
 
-// Which layer summons what. Deliberately its own table rather than anything
+// Which layer summons what. Deliberately its own mapping rather than anything
 // derived from the eyes: that maps layers to expressions, this maps layers to
-// atmosphere, and the symbol layer has an entry here while having no expression
-// at all.
+// atmosphere, and a layer can have one without the other.
+//
+// From Kconfig for the same reason the expressions are - a layer index only
+// means something to the keymap that defined it. Unmapped by default.
 static const uint8_t layer_effect[] = {
-    [1] = BG_EFFECT_SYMBOLS,
-    [2] = BG_EFFECT_SPARKLE,
-    [3] = BG_EFFECT_ANGER,
+    [0] = BG_EFFECT_NONE,
+    [1] = CONFIG_DONGLE_SCREEN_LAYER_1_EFFECT,
+    [2] = CONFIG_DONGLE_SCREEN_LAYER_2_EFFECT,
+    [3] = CONFIG_DONGLE_SCREEN_LAYER_3_EFFECT,
+    [4] = CONFIG_DONGLE_SCREEN_LAYER_4_EFFECT,
+    [5] = CONFIG_DONGLE_SCREEN_LAYER_5_EFFECT,
+    [6] = CONFIG_DONGLE_SCREEN_LAYER_6_EFFECT,
+    [7] = CONFIG_DONGLE_SCREEN_LAYER_7_EFFECT,
 };
+
+// As with the expressions: the Kconfig range and the README key are written
+// against this enum by hand.
+BUILD_ASSERT(BG_EFFECT_ANGER == 3, "effect ids moved - update the ranges in "
+                                   "Kconfig.defconfig and the key in the README");
 
 // Punctuation only - no letters, or it reads as words rather than as symbols.
 static const char *const BG_SYMBOL_CHARS[] = {"&", "[", "]", "?", "#", "@", "*",

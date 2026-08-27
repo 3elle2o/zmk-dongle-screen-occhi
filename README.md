@@ -55,8 +55,9 @@ needs no image assets.
 The first eight are states — what the face is doing. The four after them are quirks that stand in
 for the resting face on their own.
 
-Off the base layer the expression reports the active layer. On the base layer the eyes follow
-activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
+Off the base layer the expression reports the active layer, for whichever layers you map one to —
+see [Layer mapping](#layer-mapping). On the base layer, and on any layer left unmapped, the eyes
+follow activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
 20s; a strained squeeze past 57wpm; and dizzy spirals past 87. Every threshold releases well below
 where it triggers, since ZMK's WPM estimate bounces.
 
@@ -89,13 +90,65 @@ does — the effect is taken down once it has been up for its full duration, not
 released, so a brief press is never a flicker. Holding simply keeps it pulsing. The same burst runs
 once at power-up.
 
-The layer-to-effect table is this widget's own. The eyes map layers to expressions; this maps them
-to atmosphere, and the symbol layer has an entry here while having no expression at all.
+The layer-to-effect mapping is this widget's own. The eyes map layers to expressions; this maps
+them to atmosphere, and a layer can have one without the other. Both are set in your `.conf` — see
+[Layer mapping](#layer-mapping).
+
+### Layer mapping
+
+**Nothing is bound to a layer by default, because layer indices are yours.** Layer 3 is a scowl on
+this keyboard and the nav layer on the next one, so shipping a mapping would mean shipping someone
+else's joke. The eyes still do the whole idle, typing-speed and quirk repertoire out of the box, and
+the background still does its stress lines — only the per-layer flourishes wait to be asked for.
+
+Set them per layer index in your `.conf`, up to layer 7. Layer 0 takes no expression: on the base
+layer the eyes report activity rather than state.
+
+| `CONFIG_DONGLE_SCREEN_LAYER_<n>_EXPRESSION` | | `CONFIG_DONGLE_SCREEN_LAYER_<n>_EFFECT` | |
+| --- | --- | --- | --- |
+| `0` | none | `0` | none |
+| `1` | neutral | `1` | sparkles |
+| `2` | squeezed | `2` | drifting punctuation |
+| `3` | shock | `3` | anger marks |
+| `4` | sleepy | | |
+| `5` | confused | | |
+| `6` | unamused | | |
+| `7` | angry | | |
+| `8` | twinkle | | |
+| `9` | wink | | |
+| `10` | looking down | | |
+| `11` | small | | |
+| `12` | squint | | |
+
+The [expression sheet](#eyes) above shows what each one looks like. `none` means the layer has no
+expression of its own — holding it leaves the eyes doing whatever they were already doing, which is
+what you want for a layer you sit on while typing.
+
+```conf
+# sym: no expression, but the punctuation drifts behind it
+CONFIG_DONGLE_SCREEN_LAYER_1_EFFECT=2
+
+# ext: twinkle, with sparkles to match
+CONFIG_DONGLE_SCREEN_LAYER_2_EXPRESSION=8
+CONFIG_DONGLE_SCREEN_LAYER_2_EFFECT=1
+
+# fnc: the scowl, with anger marks
+CONFIG_DONGLE_SCREEN_LAYER_3_EXPRESSION=7
+CONFIG_DONGLE_SCREEN_LAYER_3_EFFECT=3
+
+# set: wide-eyed, no atmosphere
+CONFIG_DONGLE_SCREEN_LAYER_4_EXPRESSION=3
+```
+
+That is the mapping in the photographs, on a keymap whose layers are `sym`, `ext`, `fnc` and `set`.
+Pairing an expression with a matching effect is the point — the face and the background agreeing is
+what sells it — but neither needs the other.
 
 ### Tuning
 
-`#define`s at the top of each widget source. The expression-to-layer mapping is a single table, and
-the dialogue lines are three lists.
+`#define`s at the top of each widget source, for everything that is not worth a config option —
+timings, thresholds, sizes and colours. The dialogue lines are three lists in `eyes_status.c`. The
+layer mapping is the exception and lives in Kconfig, above.
 
 One constraint worth knowing before writing dialogue: a line has about 210px, a little over twenty
 lowercase characters, before it is clipped. Punctuation is fine, but the font has **no uppercase** —
@@ -313,6 +366,8 @@ include:
 | `CONFIG_DONGLE_SCREEN_WPM_ACTIVE`                              | bool | y                              | If the WPM Widget should be active or not.                                                                                                                                                                                                   |
 | `CONFIG_DONGLE_SCREEN_EYES_ACTIVE`                             | bool | n                              | If the Eyes Widget (and its dialogue) should be active or not. Turn `CONFIG_DONGLE_SCREEN_LAYER_ACTIVE` off alongside it, or the layer label draws underneath the eyes. See [Desk buddy](#desk-buddy).                                       |
 | `CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE`                       | bool | n                              | If the Background Widget should be active or not. See [Desk buddy](#desk-buddy).                                                                                                                                                             |
+| `CONFIG_DONGLE_SCREEN_LAYER_<n>_EXPRESSION`                    | int  | 0                              | Expression shown while layer `<n>` is active, for `<n>` of 1-7. `0` is none. See [Layer mapping](#layer-mapping) for the ids.                                                                                                                |
+| `CONFIG_DONGLE_SCREEN_LAYER_<n>_EFFECT`                        | int  | 0                              | Background effect while layer `<n>` is active, for `<n>` of 1-7. `0` is none. See [Layer mapping](#layer-mapping) for the ids.                                                                                                               |
 | `CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE`                         | bool | y                              | If the Modifier Widget should be active or not.                                                                                                                                                                                              |
 | `CONFIG_DONGLE_SCREEN_LAYER_ACTIVE`                            | bool | y                              | If the Layer Widget should be active or not.                                                                                                                                                                                                 |
 | `CONFIG_DONGLE_SCREEN_OUTPUT_ACTIVE`                           | bool | y                              | If the Output Widget should be active or not.                                                                                                                                                                                                |

@@ -495,13 +495,30 @@ static const struct expression expressions[EXPR_COUNT] = {
 
 // Layer 0 is handled separately - it is the only layer where the eyes are free
 // to express activity rather than state.
+//
+// Filled from Kconfig rather than written here, because a layer index means
+// whatever the keymap says it means: layer 3 is a scowl on one keyboard and the
+// nav layer on the next. Everything defaults to EXPR_NONE, so an unconfigured
+// build simply has no layer expressions rather than someone else's.
+//
+// A layer left at EXPR_NONE changes nothing when held - whatever the eyes were
+// showing carries on.
 static const enum expr_id layer_expr[] = {
-    // Layer 0's entry is never read - the base layer is handled before this
-    // table is consulted. sym is EXPR_NONE, so holding it changes nothing:
-    // whatever the eyes were showing carries on.
-    [0] = EXPR_NONE,  [1] = EXPR_NONE,  [2] = EXPR_TWINKLE,
-    [3] = EXPR_ANGRY, [4] = EXPR_SHOCK,
+    [0] = EXPR_NONE, // never read; the base layer is handled before this table
+    [1] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_1_EXPRESSION,
+    [2] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_2_EXPRESSION,
+    [3] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_3_EXPRESSION,
+    [4] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_4_EXPRESSION,
+    [5] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_5_EXPRESSION,
+    [6] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_6_EXPRESSION,
+    [7] = (enum expr_id)CONFIG_DONGLE_SCREEN_LAYER_7_EXPRESSION,
 };
+
+// The Kconfig range and the README's id key are written by hand against this
+// enum. Adding an expression without widening them leaves the new one
+// unreachable; reordering silently changes what every existing config means.
+BUILD_ASSERT(EXPR_COUNT == 13, "expression ids moved - update the ranges in "
+                               "Kconfig.defconfig and the key in the README");
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 

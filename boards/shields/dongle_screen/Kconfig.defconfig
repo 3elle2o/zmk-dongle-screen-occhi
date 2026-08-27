@@ -161,6 +161,81 @@ config DONGLE_SCREEN_EYES_ACTIVE
       Turn DONGLE_SCREEN_LAYER_ACTIVE off when enabling this, or the layer
       label will be drawn underneath them.
 
+config DONGLE_SCREEN_LAYER_1_EXPRESSION
+    int "Expression for layer 1"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 1 puts on the eyes. Layer indices are your own,
+      so nothing is mapped by default - a layer means whatever your keymap
+      says it means.
+
+      0 none - the layer has no expression of its own, so the eyes carry on
+              with whatever they were already doing
+      1 neutral      5 confused     9  wink
+      2 squeezed     6 unamused     10 looking down
+      3 shock        7 angry        11 small
+      4 sleepy       8 twinkle      12 squint
+
+      Layer 0 is never read here: on the base layer the eyes report activity
+      and typing speed instead. Layers past 7 have no mapping.
+
+config DONGLE_SCREEN_LAYER_2_EXPRESSION
+    int "Expression for layer 2"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 2 puts on the eyes. See
+      DONGLE_SCREEN_LAYER_1_EXPRESSION for the list of ids.
+
+config DONGLE_SCREEN_LAYER_3_EXPRESSION
+    int "Expression for layer 3"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 3 puts on the eyes. See
+      DONGLE_SCREEN_LAYER_1_EXPRESSION for the list of ids.
+
+config DONGLE_SCREEN_LAYER_4_EXPRESSION
+    int "Expression for layer 4"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 4 puts on the eyes. See
+      DONGLE_SCREEN_LAYER_1_EXPRESSION for the list of ids.
+
+config DONGLE_SCREEN_LAYER_5_EXPRESSION
+    int "Expression for layer 5"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 5 puts on the eyes. See
+      DONGLE_SCREEN_LAYER_1_EXPRESSION for the list of ids.
+
+config DONGLE_SCREEN_LAYER_6_EXPRESSION
+    int "Expression for layer 6"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 6 puts on the eyes. See
+      DONGLE_SCREEN_LAYER_1_EXPRESSION for the list of ids.
+
+config DONGLE_SCREEN_LAYER_7_EXPRESSION
+    int "Expression for layer 7"
+    depends on DONGLE_SCREEN_EYES_ACTIVE
+    range 0 12
+    default 0
+    help
+      Which expression layer 7 puts on the eyes. See
+      DONGLE_SCREEN_LAYER_1_EXPRESSION for the list of ids.
+
+
 config DONGLE_SCREEN_BACKGROUND_ACTIVE
     bool "Background layer active"
     default n
@@ -174,6 +249,75 @@ config DONGLE_SCREEN_BACKGROUND_ACTIVE
 
       Deliberately dimmer than the eyes and the dialogue, which are pure white:
       the background must never compete with them for attention.
+
+config DONGLE_SCREEN_LAYER_1_EFFECT
+    int "Background effect for layer 1"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 1 summons on the background. Its own mapping rather
+      than the eyes': a layer can have atmosphere without an expression, or
+      the other way round. Nothing is mapped by default.
+
+      0 none   1 sparkles   2 drifting punctuation   3 anger marks
+
+      Layers past 7 have no mapping.
+
+config DONGLE_SCREEN_LAYER_2_EFFECT
+    int "Background effect for layer 2"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 2 summons on the background. See
+      DONGLE_SCREEN_LAYER_1_EFFECT for the list of ids.
+
+config DONGLE_SCREEN_LAYER_3_EFFECT
+    int "Background effect for layer 3"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 3 summons on the background. See
+      DONGLE_SCREEN_LAYER_1_EFFECT for the list of ids.
+
+config DONGLE_SCREEN_LAYER_4_EFFECT
+    int "Background effect for layer 4"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 4 summons on the background. See
+      DONGLE_SCREEN_LAYER_1_EFFECT for the list of ids.
+
+config DONGLE_SCREEN_LAYER_5_EFFECT
+    int "Background effect for layer 5"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 5 summons on the background. See
+      DONGLE_SCREEN_LAYER_1_EFFECT for the list of ids.
+
+config DONGLE_SCREEN_LAYER_6_EFFECT
+    int "Background effect for layer 6"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 6 summons on the background. See
+      DONGLE_SCREEN_LAYER_1_EFFECT for the list of ids.
+
+config DONGLE_SCREEN_LAYER_7_EFFECT
+    int "Background effect for layer 7"
+    depends on DONGLE_SCREEN_BACKGROUND_ACTIVE
+    range 0 3
+    default 0
+    help
+      Which effect layer 7 summons on the background. See
+      DONGLE_SCREEN_LAYER_1_EFFECT for the list of ids.
+
 
 config DONGLE_SCREEN_MODIFIER_ACTIVE
     bool "Modifier Widget active"
