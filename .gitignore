@@ -2,3 +2,6 @@
 
 # Generated expression previews - vetting aid, not part of the module.
 docs/_preview/
+
+# Bytecode from docs/render_expressions.py.
+__pycache__/

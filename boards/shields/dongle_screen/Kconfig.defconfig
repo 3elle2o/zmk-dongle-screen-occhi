@@ -154,6 +154,10 @@ config DONGLE_SCREEN_EYES_ACTIVE
       glance around, and change expression per layer. On the base layer they
       react to idle state and typing speed instead.
 
+      Carries the dialogue with it: short lines typed out beside the face when
+      the keyboard wakes, while typing, and after a wait. There is no separate
+      option for them.
+
       Turn DONGLE_SCREEN_LAYER_ACTIVE off when enabling this, or the layer
       label will be drawn underneath them.
 
@@ -163,7 +167,10 @@ config DONGLE_SCREEN_BACKGROUND_ACTIVE
     select LV_USE_LINE
     help
       A layer behind every other widget, for things that are atmosphere rather
-      than information. Currently a burst of sparkles on power-up.
+      than information. Purple stress lines under a blue wash build with typing
+      speed, and a layer can summon an effect of its own - drifting punctuation,
+      gold sparkles, red anger marks. The sparkle burst also runs once at
+      power-up.
 
       Deliberately dimmer than the eyes and the dialogue, which are pure white:
       the background must never compete with them for attention.
