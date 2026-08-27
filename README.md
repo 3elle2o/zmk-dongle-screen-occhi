@@ -384,6 +384,25 @@ west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dong
 
 _Note: a matching entry for `-DSHIELD` must already be present in your `build.yaml` in your configuration, which is given as the `-DZMK_CONFIG` argument._
 
+## Credits
+
+Almost none of the hard part is this fork's. What was added here is a face; what makes there be a
+screen for it to live on is other people's work.
+
+- **[janpfischer](https://github.com/janpfischer)** — [YADS](https://github.com/janpfischer/zmk-dongle-screen),
+  which this forks. The shield, the ST7789V driver glue, the brightness and ambient light handling,
+  the idle and toggle behaviour, and the output, layer, mod, WPM and battery widgets. The eyes were
+  dropped into a module that already worked; everything holding them up is theirs.
+- **[carrefinho](https://github.com/carrefinho)** — [Prospector](https://github.com/carrefinho/prospector)
+  and [prospector-zmk-module](https://github.com/carrefinho/prospector-zmk-module). The dongle this
+  runs on, the case, and the build guide that gets people to working hardware in the first place —
+  there is no desk buddy without a screen on a desk.
+- **[englmaxi](https://github.com/englmaxi)** — [zmk-dongle-display](https://github.com/englmaxi/zmk-dongle-display),
+  which YADS credits as its own inspiration.
+- **The [ZMK](https://zmk.dev) project** — the firmware all of this is a guest in.
+- **The Fredoka and JetBrains Mono Project Authors** — the bundled fonts. See
+  [Licensing](#licensing).
+
 ## Licensing
 
 The module is MIT, **except** the bundled font:
