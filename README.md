@@ -233,7 +233,7 @@ this builds", which is how a working config broke without being touched: ZMK was
    ```yaml
    - name: zmk-dongle-screen
      remote: rayreside
-     revision: 2e2ede2446c476d83e92deb7763740e8f7f821e7
+     revision: 7a8bfa761134ebe272df657fc5d40505f4c34760
    ```
 
 3. The shield must be included in your build configuration for the dongle you set up in step 1.  
