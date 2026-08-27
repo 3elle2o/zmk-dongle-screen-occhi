@@ -1,39 +1,38 @@
-# ZMK Dongle Screen YADS (Yet another Dongle Screen)
+# Desk Buddy
 
-> **This is a fork.** Everything below the fold is upstream's work; this notice covers only what
-> has been added on top.
->
-> It branches from upstream's `upgrade-4.1` (Zephyr 4.1 / LVGL 9) and turns the status screen into
-> a desk buddy: a pair of animated eyes in place of the layer label, short lines of dialogue beside
-> them, and a background layer behind both. The output and battery widgets were reworked to make
-> room. See [Desk buddy](#desk-buddy).
->
-> Also note [Licensing](#licensing) — the bundled fonts are OFL, not MIT, and the text face
-> carries no uppercase.
->
-> Upstream: [janpfischer/zmk-dongle-screen](https://github.com/janpfischer/zmk-dongle-screen) by
-> [janpfischer](https://github.com/janpfischer), who wrote the module this is built on — the
-> shield, the display driver glue, the brightness and ambient light handling, and every widget the
-> fork did not replace.
+A ZMK dongle screen that looks back at you.
 
-![The desk buddy at rest, on an Urchin with nice!view halves](/docs/images/dongle.jpg)
+![The face at rest, on an Urchin with nice!view halves](/docs/images/dongle.jpg)
 
 The resting face. The expressions, the dialogue and the background are all motion, so a still
 shows the quietest thing the screen does.
 
-This project provides a Zephyr module for a dongle display shield based on the ST7789V display and the Seeeduino XAIO BLE microcontroller and the LVGL graphics library.  
-The display can take advantage of a ambient light sensor to dim and brighten the display automatically.  
-It offers various widgets for current output, displaying layer, mod, WPM, and battery status, as well as brightness adjustments via keyboard, automatic dimming after inactivity, and a customizable status screen for ZMK-based keyboards. This fork adds three more — animated eyes, dialogue and a background layer.
+Most dongle screens are dashboards — layer, modifiers, words per minute, battery, laid out to be
+read at a glance. This one puts a face where the dashboard was. A pair of animated eyes report the
+active layer, strain as your typing speed climbs, and doze off when you stop; short lines of
+dialogue appear beside them; a background layer carries whatever the moment calls for. The
+readouts are still there, just smaller and around the edges.
 
-**This project is inspired by [prospector-zmk-module](https://github.com/carrefinho/prospector-zmk-module) and [zmk-dongle-display](https://github.com/englmaxi/zmk-dongle-display). Thanks for your awesome work!**
+Underneath it is a Zephyr module for an ST7789V panel on a Seeed XIAO nRF52840 or a nice!nano v2,
+drawn with LVGL, tracking ZMK `main` on Zephyr 4.1.
 
-## Desk buddy
+It is built on [janpfischer](https://github.com/janpfischer)'s
+[YADS](https://github.com/janpfischer/zmk-dongle-screen) — the shield, the display driver glue,
+the brightness and ambient light handling and most of the widgets are theirs. The eyes, the
+dialogue and the background were added here, and the output and battery widgets reworked to make
+room. See [Credits](#credits).
 
-Three layers this fork adds, drawn back to front: a **background** of atmosphere, the **eyes**, and
-**dialogue** over the top. Each is independent — its own widget, its own event subscriptions, its
-own config option — so any of them can be left off.
+> One thing to know before you write any dialogue: the bundled text font carries **no uppercase**,
+> and a capital renders as nothing at all rather than failing loudly. See
+> [Licensing](#licensing).
 
-```
+## The face
+
+Three layers, drawn back to front: a **background** of atmosphere, the **eyes**, and **dialogue**
+over the top. Each is independent — its own widget, its own event subscriptions, its own config
+option — so any of them can be left off.
+
+```conf
 CONFIG_DONGLE_SCREEN_EYES_ACTIVE=y
 CONFIG_DONGLE_SCREEN_LAYER_ACTIVE=n     # or the layer label draws underneath the eyes
 CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE=y
@@ -94,163 +93,64 @@ The layer-to-effect mapping is this widget's own. The eyes map layers to express
 them to atmosphere, and a layer can have one without the other. Both are set in your `.conf` — see
 [Layer mapping](#layer-mapping).
 
-### Layer mapping
 
-**Nothing is bound to a layer by default, because layer indices are yours.** Layer 3 is a scowl on
-this keyboard and the nav layer on the next one, so shipping a mapping would mean shipping someone
-else's joke. The eyes still do the whole idle, typing-speed and quirk repertoire out of the box, and
-the background still does its stress lines — only the per-layer flourishes wait to be asked for.
+## The rest of the screen
 
-Set them per layer index in your `.conf`, up to layer 7. Layer 0 takes no expression: on the base
-layer the eyes report activity rather than state.
+Everything the face is not — the status readouts, around the edges.
 
-| `CONFIG_DONGLE_SCREEN_LAYER_<n>_EXPRESSION` | | `CONFIG_DONGLE_SCREEN_LAYER_<n>_EFFECT` | |
-| --- | --- | --- | --- |
-| `0` | none | `0` | none |
-| `1` | neutral | `1` | sparkles |
-| `2` | squeezed | `2` | drifting punctuation |
-| `3` | shock | `3` | anger marks |
-| `4` | sleepy | | |
-| `5` | confused | | |
-| `6` | unamused | | |
-| `7` | angry | | |
-| `8` | twinkle | | |
-| `9` | wink | | |
-| `10` | looking down | | |
-| `11` | small | | |
-| `12` | squint | | |
+> **The layer, mod and WPM widgets are not placed for the face.** All three land where something
+> now draws: layer dead centre underneath the eyes, mod across their lower edge, WPM in the band
+> dialogue writes across. Turn them off when running the face, or move them. They are not broken,
+> just positioned for a screen that no longer looks like this.
 
-The [expression sheet](#eyes) above shows what each one looks like. `none` means the layer has no
-expression of its own — holding it leaves the eyes doing whatever they were already doing, which is
-what you want for a layer you sit on while typing.
+- **Output** — the live transport only, on one line and in lower case. Drawing the inactive one
+  told you nothing you could not infer and cost a whole row.
+  - **usb** — white when USB HID is ready and active; red when the dongle has power but no host,
+    as on a wall plug or a battery pack.
+  - **ble** — the selected profile number follows on the same line. Green connected, blue bonded
+    but not currently connected, white for a free profile.
 
-```conf
-# sym: no expression, but the punctuation drifts behind it
-CONFIG_DONGLE_SCREEN_LAYER_1_EFFECT=2
+- **Battery** — a battery icon with the figure beside it, one cell per half on a single row. Grey
+  `x` when a half is not reporting, red at or below 10%, yellow at or below 20%, white above.
 
-# ext: twinkle, with sparkles to match
-CONFIG_DONGLE_SCREEN_LAYER_2_EXPRESSION=8
-CONFIG_DONGLE_SCREEN_LAYER_2_EFFECT=1
+- **Layer** — the active layer as text. Redundant alongside the eyes, which report it themselves.
 
-# fnc: the scowl, with anger marks
-CONFIG_DONGLE_SCREEN_LAYER_3_EXPRESSION=7
-CONFIG_DONGLE_SCREEN_LAYER_3_EFFECT=3
+- **Mod** — which modifiers are currently held.
 
-# set: wide-eyed, no atmosphere
-CONFIG_DONGLE_SCREEN_LAYER_4_EXPRESSION=3
-```
+- **WPM** — typing speed as a number. The eyes read the same figure whether or not this is drawn,
+  so turning it off drops the readout, not the reaction.
 
-That is the mapping in the photographs, on a keymap whose layers are `sym`, `ext`, `fnc` and `set`.
-Pairing an expression with a matching effect is the point — the face and the background agreeing is
-what sells it — but neither needs the other.
+## Screen behaviour
 
-### Tuning
+- **Ambient light** — with an `Adafruit APDS9960` wired up, the panel tracks the light in the room.
+  Off by default. The brightness keys still apply a modifier on top of whatever it chooses.
+- **Brightness and toggle keys** — F23 and F24 step the brightness, F22 turns the panel off and on.
+  Bind them in your keymap; all three keycodes are configurable.
+- **Idle timeout** — the panel dims to nothing after a stretch without keystrokes and returns on the
+  next one. `0` never dims.
+- **Orientation** — horizontal or vertical, and flipped either way to match how the panel sits in
+  its case.
+- **Custom status screen** — the widgets are assembled in `custom_status_screen.c`. Rearranging them
+  means editing that file and rebuilding.
 
-`#define`s at the top of each widget source, for everything that is not worth a config option —
-timings, thresholds, sizes and colours. The dialogue lines are three lists in `eyes_status.c`. The
-layer mapping is the exception and lives in Kconfig, above.
+## Hardware
 
-One constraint worth knowing before writing dialogue: a line has about 210px, a little over twenty
-lowercase characters, before it is clipped. Punctuation is fine, but the font has **no uppercase** —
-a capital renders as nothing at all, silently. See [Licensing](#licensing) to widen it.
+There is no build guide here — this repository is a module and nothing else. For the dongle itself,
+use **carrefinho**'s [Prospector](https://github.com/carrefinho/prospector) guide, built around the
+Seeed Studio XIAO nRF52840.
 
-## Building a dongle
-
-To build a dongle yourself you can use the build guide by **carrefinho** ([prospector project](https://github.com/carrefinho/prospector)) based on the Seeed Studio XIAO nRF52840.
-
-nice!nano v2 supported. [Wiring guide](/docs/nice_nano_wire_guide.md).
-
-This repository only contains a module and no build guides or suggestions.
-
-## Widgets Overview
-
-This module provides several widgets to visualize the current state of your ZMK-based keyboard.
-
-Three are this fork's and are described under [Desk buddy](#desk-buddy) rather than repeated here:
-
-- **Eyes Widget** — animated eyes in place of the layer label, reporting the active layer and
-  reacting to idle and typing speed
-- **Dialogue** — short spoken lines beside the face, part of the eyes widget
-- **Background Widget** — a layer behind everything else: stress lines that build with typing
-  speed, and per-layer atmosphere
-
-The rest are upstream's, two of them altered here.
-
-> **The layer, mod and WPM widgets have not been adapted to the eyes.** They keep upstream's
-> placements, which were chosen for upstream's layout, and all three land where something now
-> draws: layer dead centre underneath the eyes, mod across their lower edge, WPM in the band
-> dialogue writes across. Turn them off when running the desk buddy, or move them — they are not
-> broken, just placed for a screen that no longer looks like this.
-
-- **Output Widget**  
-  Indicates the current output state of the keyboard. **Changed in this fork:** only the live
-  transport is drawn, on one line and in lower case, rather than both with an arrow marking the
-  active one — the inactive one told you nothing you could not infer and cost a whole row.
-  - **usb:**
-    - **White:** USB HID is ready and active (dongle is connected to a computer and working as a keyboard).
-    - **Red:** USB HID is not ready (dongle is powered, e.g. via wall plug or power bank, but not connected to a computer).
-  - **ble:**  
-    For the currently selected Bluetooth profile, whose number follows on the same line:
-    - **Green:** Connected (active BLE connection established)
-    - **Blue:** Bonded (device is paired, but not currently connected)
-    - **White:** Profile is free (no device paired or connected for this profile)
-
-- **Layer Widget**  
-  Displays the currently active keyboard layer. Useful for quickly identifying which layer is
-  active. Redundant alongside the eyes, which report the layer themselves.
-
-- **Mod Widget**  
-  Shows the status of modifier keys (e.g., Shift, Ctrl, Alt, GUI). Indicates which modifiers are currently pressed.
-
-- **WPM Widget**  
-  Displays the current words per minute (WPM) typing speed in real time. The eyes read the same
-  figure whether or not this is shown - turning it off drops the readout, not the reaction.
-
-- **Battery Widget**  
-  Shows the battery level of the dongle and/or the keyboard, if supported. **Changed in this
-  fork:** drawn as a battery icon with the figure beside it rather than a bar, one cell per half on
-  a single row. Grey `x` when a half is not reporting, red at or below 10%, yellow at or below 20%,
-  white above.
-
-## General Features
-
-- **Custom Status Screen**  
-  Combine and arrange widgets as you like for a fully customizable status display. (Code changes and recompiling are needed for this.)
-
-- **Deactivate Screen Modules via configuration**  
-  If you don't need a specific module to be shown (like WPM) you can simple disable them via configuration. No code changes are needed for this.
-
-- **Ambient light sensor adjustment**
-  This module supports ambient light sensors. Tested is the `Adafruit APDS9960` sensor.  
-  Using the sensor allows to adjust the lightning to the ambient light level. This can be modified by the `Brightness Control` keys to apply a positive or negative modifier.  
-  If you want to use this feature you'll have to enable it via configuration. Please refer to the configuration overview below.
-
-- **Toggle the display via Keyboard**  
-  Toggle the display off and on via keyboard shortcut. By default F22 is mapped to this. You'll just have to assign this in your keyboard keymap.  
-  When the display is turned off via toggle and the idle timeout is reached the display will turn on once a new activity is recognized.
-
-- **Brightness Control**  
-  Adjust the display brightness via keyboard shortcuts. By default, F23 and F24 are mapped to this. You'll just have to assign this in your keyboard keymap.
-
-- **Configurable Display Orientation**  
-  Set the screen orientation to match your keyboard or desk setup (horizontal or vertical). Additionally, the screen can be flipped to match the orientation of the display in your casing.
-
-- **Idle Timeout**  
-  Automatically turns off or dims the display after a configurable period of inactivity (no keystrokes). It automatically turns on when the first keystroke is detected again.  
-  The idle timeout can be set in seconds. If set to `0`, the display will never dim or turn off automatically.  
-  When the idle timeout is reached, the display brightness will be set to 0.  
-  When activity resumes, the brightness will be restored to the last value (up to `DONGLE_SCREEN_MAX_BRIGHTNESS`).  
+nice!nano v2 works too: [wiring guide](/docs/nice_nano_wire_guide.md).
 
 ## Installation
 
-> **This fork, not upstream.** The manifest below points at `rayreside`, which is what gets you the
-> eyes. For upstream's own module use `janpfischer` and see
-> [their README](https://github.com/janpfischer/zmk-dongle-screen) — the rest of these instructions
-> are theirs and apply either way.
+> The manifest below points at `rayreside`, which is what gets you the face. If you want the
+> status-readout screen this grew out of, point it at `janpfischer` instead and follow
+> [their README](https://github.com/janpfischer/zmk-dongle-screen) — the steps are the same either
+> way.
 
 **ZMK version compatibility**
-This fork tracks ZMK `main`, which is on Zephyr 4.1. That is why it branches from upstream's
-`upgrade-4.1` rather than their `main`, which is still LVGL 8 and will not build against it.
+This tracks ZMK `main`, which is on Zephyr 4.1 and LVGL 9. YADS's own `main` is still on LVGL 8 and
+will not build against it, which is why this line of work started from their `upgrade-4.1`.
 
 Pin every project to a commit rather than a branch. A branch means "whatever is at the tip when
 this builds", which is how a working config broke without being touched: ZMK was on `main` when
@@ -342,7 +242,80 @@ include:
     artifact-name: totem-settings-reset
 ```
 
-## Configuration Options
+
+## Making it yours
+
+The face is meant to be re-pointed at your own keymap, and there are three levels of that in
+increasing order of effort: config options, the layer mapping, and `#define`s in the source.
+
+### Choosing what is drawn
+
+Every widget has an on/off switch in [Configuration options](#configuration-options). Running the
+face usually means turning the layer label off, and often the mod and WPM widgets too, since all
+three draw where the face now sits. Nothing else has to change to get the screen in the photograph.
+
+### Layer mapping
+
+**Nothing is bound to a layer by default, because layer indices are yours.** Layer 3 is a scowl on
+this keyboard and the nav layer on the next one, so shipping a mapping would mean shipping someone
+else's joke. The eyes still do the whole idle, typing-speed and quirk repertoire out of the box, and
+the background still does its stress lines — only the per-layer flourishes wait to be asked for.
+
+Set them per layer index in your `.conf`, up to layer 7. Layer 0 takes no expression: on the base
+layer the eyes report activity rather than state.
+
+| `CONFIG_DONGLE_SCREEN_LAYER_<n>_EXPRESSION` | | `CONFIG_DONGLE_SCREEN_LAYER_<n>_EFFECT` | |
+| --- | --- | --- | --- |
+| `0` | none | `0` | none |
+| `1` | neutral | `1` | sparkles |
+| `2` | squeezed | `2` | drifting punctuation |
+| `3` | shock | `3` | anger marks |
+| `4` | sleepy | | |
+| `5` | confused | | |
+| `6` | unamused | | |
+| `7` | angry | | |
+| `8` | twinkle | | |
+| `9` | wink | | |
+| `10` | looking down | | |
+| `11` | small | | |
+| `12` | squint | | |
+
+The [expression sheet](#eyes) above shows what each one looks like. `none` means the layer has no
+expression of its own — holding it leaves the eyes doing whatever they were already doing, which is
+what you want for a layer you sit on while typing.
+
+```conf
+# sym: no expression, but the punctuation drifts behind it
+CONFIG_DONGLE_SCREEN_LAYER_1_EFFECT=2
+
+# ext: twinkle, with sparkles to match
+CONFIG_DONGLE_SCREEN_LAYER_2_EXPRESSION=8
+CONFIG_DONGLE_SCREEN_LAYER_2_EFFECT=1
+
+# fnc: the scowl, with anger marks
+CONFIG_DONGLE_SCREEN_LAYER_3_EXPRESSION=7
+CONFIG_DONGLE_SCREEN_LAYER_3_EFFECT=3
+
+# set: wide-eyed, no atmosphere
+CONFIG_DONGLE_SCREEN_LAYER_4_EXPRESSION=3
+```
+
+That is the mapping in the photographs, on a keymap whose layers are `sym`, `ext`, `fnc` and `set`.
+Pairing an expression with a matching effect is the point — the face and the background agreeing is
+what sells it — but neither needs the other.
+
+### Tuning
+
+`#define`s at the top of each widget source, for everything that is not worth a config option —
+timings, thresholds, sizes and colours. The dialogue lines are three lists in `eyes_status.c`. The
+layer mapping is the exception and lives in Kconfig, above.
+
+One constraint worth knowing before writing dialogue: a line has about 210px, a little over twenty
+lowercase characters, before it is clipped. Punctuation is fine, but the font has **no uppercase** —
+a capital renders as nothing at all, silently. See [Licensing](#licensing) to widen it.
+
+
+### Configuration options
 
 | Name                                                           | Type | Default                        | Description                                                                                                                                                                                                                                  |
 | -------------------------------------------------------------- | ---- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -364,8 +337,8 @@ include:
 | `CONFIG_DONGLE_SCREEN_BRIGHTNESS_DOWN_KEYCODE`                 | int  | 114                            | Keycode for decreasing screen brightness (default: F23).                                                                                                                                                                                     |
 | `CONFIG_DONGLE_SCREEN_BRIGHTNESS_STEP`                         | int  | 10                             | Step for brightness adjustment with keyboard. How much brightness (range MIN_BRIGHTNESS to MAX_BRIGHTNESS) should be applied per keystroke.                                                                                                  |
 | `CONFIG_DONGLE_SCREEN_WPM_ACTIVE`                              | bool | y                              | If the WPM Widget should be active or not.                                                                                                                                                                                                   |
-| `CONFIG_DONGLE_SCREEN_EYES_ACTIVE`                             | bool | n                              | If the Eyes Widget (and its dialogue) should be active or not. Turn `CONFIG_DONGLE_SCREEN_LAYER_ACTIVE` off alongside it, or the layer label draws underneath the eyes. See [Desk buddy](#desk-buddy).                                       |
-| `CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE`                       | bool | n                              | If the Background Widget should be active or not. See [Desk buddy](#desk-buddy).                                                                                                                                                             |
+| `CONFIG_DONGLE_SCREEN_EYES_ACTIVE`                             | bool | n                              | If the Eyes Widget (and its dialogue) should be active or not. Turn `CONFIG_DONGLE_SCREEN_LAYER_ACTIVE` off alongside it, or the layer label draws underneath the eyes. See [The face](#the-face).                                       |
+| `CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE`                       | bool | n                              | If the Background Widget should be active or not. See [The face](#the-face).                                                                                                                                                             |
 | `CONFIG_DONGLE_SCREEN_LAYER_<n>_EXPRESSION`                    | int  | 0                              | Expression shown while layer `<n>` is active, for `<n>` of 1-7. `0` is none. See [Layer mapping](#layer-mapping) for the ids.                                                                                                                |
 | `CONFIG_DONGLE_SCREEN_LAYER_<n>_EFFECT`                        | int  | 0                              | Background effect while layer `<n>` is active, for `<n>` of 1-7. `0` is none. See [Layer mapping](#layer-mapping) for the ids.                                                                                                               |
 | `CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE`                         | bool | y                              | If the Modifier Widget should be active or not.                                                                                                                                                                                              |
@@ -374,7 +347,7 @@ include:
 | `CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE`                          | bool | y                              | If the Battery Widget should be active or not.                                                                                                                                                                                               |
 | `CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT_TEST`                      | bool | n                              | If enabled, the ambient light sensor will be mocked to adjust screen brightness.                                                                                                                                                             |
 
-## Example Configuration (`prj.conf`)
+### Example configuration (`prj.conf`)
 
 ```conf
 CONFIG_DONGLE_SCREEN_HORIZONTAL=y
@@ -389,6 +362,7 @@ CONFIG_DONGLE_SCREEN_BRIGHTNESS_UP_KEYCODE=115
 CONFIG_DONGLE_SCREEN_BRIGHTNESS_DOWN_KEYCODE=114
 CONFIG_DONGLE_SCREEN_BRIGHTNESS_STEP=5
 ```
+
 
 ## Pairing
 
@@ -441,11 +415,11 @@ _Note: a matching entry for `-DSHIELD` must already be present in your `build.ya
 
 ## Credits
 
-Almost none of the hard part is this fork's. What was added here is a face; what makes there be a
-screen for it to live on is other people's work.
+Almost none of the hard part is ours. What was added here is a face; what makes there be a screen
+for it to live on is other people's work.
 
 - **[janpfischer](https://github.com/janpfischer)** — [YADS](https://github.com/janpfischer/zmk-dongle-screen),
-  which this forks. The shield, the ST7789V driver glue, the brightness and ambient light handling,
+  which this is built on. The shield, the ST7789V driver glue, the brightness and ambient light handling,
   the idle and toggle behaviour, and the output, layer, mod, WPM and battery widgets. The eyes were
   dropped into a module that already worked; everything holding them up is theirs.
 - **[carrefinho](https://github.com/carrefinho)** — [Prospector](https://github.com/carrefinho/prospector)
@@ -476,7 +450,7 @@ licensed under the SIL Open Font License 1.1. The OFL permits bundling with soft
 licence and is not viral — it applies to the font file alone and leaves the rest of this module
 MIT. Fredoka carries no Reserved Font Name, so this converted copy may keep the name.
 
-The two `NerdFonts_*` files come from upstream and are converted from JetBrains Mono Nerd Font,
+The two `NerdFonts_*` files came with YADS and are converted from JetBrains Mono Nerd Font,
 whose glyphs are JetBrains Mono — Copyright 2020 The JetBrains Mono Project Authors, also under the
 SIL OFL 1.1. They are used by the mod and WPM widgets. The licence text bundled here is the OFL
 itself and covers them equally; only the copyright line at its head is Fredoka's.
@@ -484,7 +458,7 @@ itself and covers them equally; only the copyright line at its head is Fredoka's
 If you redistribute this module, `Fredoka-OFL.txt` must travel with the fonts. That is the OFL's
 one substantive condition.
 
-The font was generated from the upstream variable font by instancing `wght=600 wdth=100` with
+The font was generated from the Fredoka variable font by instancing `wght=600 wdth=100` with
 `fontTools`, then converting with `lv_font_conv` at 20px / 4bpp. Regenerate rather than
 hand-editing it:
 
